@@ -2,12 +2,12 @@ import React, { useState, useEffect } from 'react';
 import { ChevronRight, Users, Plus, FileText, Database, Settings, Clock, CheckCircle, AlertCircle, Table as TableIcon, MoreVertical, Copy, Pencil, X, Info, Power, Maximize2 } from 'lucide-react';
 
 // Import extracted configs
-import { templateHierarchy } from './src/config/templateHierarchy';
-import { resourceSections } from './src/config/resourceSections';
-import { EHR_RESOURCES, getResourcesForEhr, formatResourceOption, getAllDocumentTypes, getDocumentTypesForEhr, getAllEhrDocumentTypeCombinations, getAllEhrNames } from './src/config/ehrResources';
+import { templateHierarchy } from './config/templateHierarchy';
+import { resourceSections } from './config/resourceSections';
+import { EHR_RESOURCES, getResourcesForEhr, formatResourceOption, getAllDocumentTypes, getDocumentTypesForEhr, getAllEhrDocumentTypeCombinations, getAllEhrNames } from './config/ehrResources';
 
 // Import utility functions
-import { computeRelativeDate } from './src/utils/dateHelpers';
+import { computeRelativeDate } from './utils/dateHelpers';
 
 const SummarizerPrototype = () => {
   const [currentView, setCurrentView] = useState('doctors');
