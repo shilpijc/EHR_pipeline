@@ -2,12 +2,40 @@ import React, { useState, useEffect } from 'react';
 import { ChevronRight, Users, Plus, FileText, Database, Settings, Clock, CheckCircle, AlertCircle, Table as TableIcon, MoreVertical, Copy, Pencil, X, Info, Power, Maximize2 } from 'lucide-react';
 
 // Import extracted configs
-import { templateHierarchy } from './config/templateHierarchy';
-import { resourceSections } from './config/resourceSections';
-import { EHR_RESOURCES, getResourcesForEhr, formatResourceOption, getAllDocumentTypes, getDocumentTypesForEhr, getAllEhrDocumentTypeCombinations, getAllEhrNames } from './config/ehrResources';
+import {
+  templateHierarchy,
+  resourceSections,
+  EHR_RESOURCES,
+  getResourcesForEhr,
+  formatResourceOption,
+  getAllDocumentTypes,
+  getDocumentTypesForEhr,
+  getAllEhrDocumentTypeCombinations,
+  getAllEhrNames
+} from './config';
 
 // Import utility functions
-import { computeRelativeDate } from './utils/dateHelpers';
+import { computeRelativeDate, maskEmail, generateDefaultPrompt } from './utils';
+
+// Import constants
+import {
+  DEFAULT_PROMPTS_BY_DOC_TYPE,
+  DEFAULT_BACKGROUND_PROMPTS,
+  DEFAULT_FORM_DATA,
+  MOCK_DOCTORS,
+  EHR_COLORS,
+  PRACTICES
+} from './constants';
+
+// Import components
+import BulkTransferPage from './components/BulkTransferPage';
+import DoctorsView from './components/views/DoctorsView';
+import SummarizersVariablesView from './components/views/SummarizersVariablesView';
+import CopyDoctorModal from './components/modals/CopyDoctorModal';
+
+// Import hooks (available for future use)
+// import { useModals } from './hooks/useModals';
+// import { useSummarizers } from './hooks/useSummarizers';
 
 const SummarizerPrototype = () => {
   const [currentView, setCurrentView] = useState('doctors');
@@ -25,7 +53,11 @@ const SummarizerPrototype = () => {
   const [createTypeDropdown, setCreateTypeDropdown] = useState(null); // doctor.id for which create dropdown is open
   const [viewAllCreateDropdown, setViewAllCreateDropdown] = useState(null); // 'summarizers' | null for View All page
   const [summarizerPickerDropdown, setSummarizerPickerDropdown] = useState(null); // sectionId for which picker is open
-  const [viewAllMode, setViewAllMode] = useState('list'); // 'list' | 'combined' for View All page
+  const [cellSummarizerDropdown, setCellSummarizerDropdown] = useState(null); // `${sectionKey}-${template}` for which cell dropdown is open
+  const [promptEditModal, setPromptEditModal] = useState(null); // { sectionKey, template, summarizerId, summarizerName } for prompt editing modal
+  const [promptModalAction, setPromptModalAction] = useState('append'); // 'append' | 'prepend' | 'inform'
+  const [promptModalInstructions, setPromptModalInstructions] = useState('');
+  const [pendingSummarizerSelection, setPendingSummarizerSelection] = useState(null); // { sectionKey, template, summarizerId, summarizerName } - selected but action not chosen yet
   const [showActivateConfirm, setShowActivateConfirm] = useState(null); // summarizerId for which confirmation is shown
   const [pendingActivateAction, setPendingActivateAction] = useState(null); // { summarizerId, newActiveState }
   
@@ -34,19 +66,10 @@ const SummarizerPrototype = () => {
     const combinations = getAllEhrDocumentTypeCombinations();
     const prompts = {};
     
-    // Default prompts per document type (will be used as base for all EHRs)
-    const defaultPromptsByDocType = {
-      'Previous Notes': 'Summarize the key findings, diagnoses, and treatment plans from the previous clinical notes. Include relevant dates and any changes in patient condition.',
-      'Lab Results': 'Extract and summarize the key laboratory values, highlighting any abnormal results and trends. Include reference ranges where applicable.',
-      'Clinical Documents': 'Summarize the clinical document, focusing on the main findings, diagnoses, and recommendations. Include relevant dates and context.',
-      'Imaging Results': 'Summarize the imaging findings, including any abnormalities, measurements, and clinical significance. Reference the imaging modality and date.',
-      'Problems List': 'Extract and summarize the patient\'s active and resolved problems, including diagnoses and their current status.'
-    };
-    
     // Initialize all combinations with defaults
     combinations.forEach(({ ehr, documentType }) => {
       const key = `${ehr}-${documentType}`;
-      prompts[key] = defaultPromptsByDocType[documentType] || `Default prompt for ${ehr} ${documentType}`;
+      prompts[key] = DEFAULT_PROMPTS_BY_DOC_TYPE[documentType] || `Default prompt for ${ehr} ${documentType}`;
     });
     
     return prompts;
@@ -55,12 +78,6 @@ const SummarizerPrototype = () => {
   // Default prompts per (EHR, Document Type) combination (managed by Ops)
   const [documentTypePrompts, setDocumentTypePrompts] = useState(() => initializeEhrDocumentTypePrompts());
   
-  // State for editing document type prompts
-  const [editingDocType, setEditingDocType] = useState(null);
-  const [editPrompt, setEditPrompt] = useState('');
-  
-  // State for EHR filter in Manage Documents view
-  const [selectedEhrFilter, setSelectedEhrFilter] = useState('All EHRs');
 
   // ============================================================================
   // SUMMARIZER STATE
@@ -74,69 +91,422 @@ const SummarizerPrototype = () => {
   const [pendingSectionId, setPendingSectionId] = useState(null);
 
   // Copy modals state
-  const [showCopySummarizerModal, setShowCopySummarizerModal] = useState(false);
   const [showCopyDoctorModal, setShowCopyDoctorModal] = useState(false);
   const [copySourceDoctor, setCopySourceDoctor] = useState(null);
   const [selectedSummarizers, setSelectedSummarizers] = useState([]);
   const [targetDoctorEmails, setTargetDoctorEmails] = useState(['']);
   const [targetEHR, setTargetEHR] = useState('');
+  
+  // Bulk Transfer state
+  const [bulkSourceDoctor, setBulkSourceDoctor] = useState(null);
+  const [bulkTargetDoctors, setBulkTargetDoctors] = useState([]);
+  const [bulkSelectedSummarizers, setBulkSelectedSummarizers] = useState([]);
+  const [bulkCopyType, setBulkCopyType] = useState('summarizers'); // 'summarizers' | 'doctor'
 
   // Resource mapping state for different EHR copies
   const [showResourceMappingModal, setShowResourceMappingModal] = useState(false);
   const [pendingResourceMappings, setPendingResourceMappings] = useState([]);
 
   // Background prompts state (for template configuration)
-  const [bgPrompts, setBgPrompts] = useState({
-    'lab': 'The doctor has provided a Lab Reports Summary: {summary_content}\n\nUse this information to inform relevant sections, noting dates and key findings.',
-    'notes': 'The doctor has provided a Previous Clinical Notes Summary: {summary_content}\n\nUse this to provide context from prior visits.',
-    'imaging': 'The doctor has provided an Imaging Reports Summary: {summary_content}\n\nUse this to correlate imaging findings with clinical presentation.',
-    'medication': 'The doctor has provided a Medication Summary: {summary_content}\n\nUse this for medication reconciliation and treatment planning.'
-  });
+  const [bgPrompts, setBgPrompts] = useState(DEFAULT_BACKGROUND_PROMPTS);
   const [editedPrompts, setEditedPrompts] = useState(new Set());
 
   
   // Store created summarizers
   const [createdSummarizers, setCreatedSummarizers] = useState([
-    // Dummy summarizers for testing
+    // Dr. Sarah Chen (ECW) - Neurology
     {
       id: 'summarizer-1',
       name: 'Neurology Visit Summary',
-      purpose: 'Summarize neurology consultation visits',
+      purpose: 'Summarize neurology consultation visits and extract key findings',
       pullFromEHR: true,
       allowUpload: true,
       allowText: false,
       useSeparatePrompts: false,
-      commonPrompt: 'Summarize the key findings and recommendations from this visit.',
+      commonPrompt: 'Summarize the key findings, diagnoses, and treatment recommendations from this neurology visit.',
       doctorId: 1,
       doctorName: 'Dr. Sarah Chen',
       ehr: 'ECW',
       selectedResource: 'ecw-previous-notes-xml',
-      resourceType: 'existing',
-      dateFrom: '2024-01-01',
-      dateTo: '2024-12-31',
+      howFarBackYears: 3,
+      howFarBackToDays: 3,
       documentCount: 5,
-      primaryModel: 'gpt-4-turbo',
-      fallbackModel: 'gpt-4',
+      retrievalMethod: 'latest',
+      primaryModel: 'claude-3-sonnet',
+      fallbackModel: 'gpt-4-turbo',
       active: true
     },
     {
       id: 'summarizer-2',
-      name: 'Cardiology Lab Review',
-      purpose: 'Review and summarize cardiac lab results',
+      name: 'Neurological Exam Notes',
+      purpose: 'Extract and summarize neurological examination findings',
       pullFromEHR: true,
       allowUpload: false,
       allowText: true,
       useSeparatePrompts: true,
       commonPrompt: '',
-      ehrPrompt: 'Extract and summarize cardiac enzyme levels and lipid panels.',
+      ehrPrompt: 'Extract neurological examination findings including reflexes, motor function, and sensory responses.',
+      textPrompt: 'Summarize the neurological examination findings from the pasted text.',
+      doctorId: 1,
+      doctorName: 'Dr. Sarah Chen',
+      ehr: 'ECW',
+      selectedResource: 'ecw-previous-notes-xml',
+      howFarBackYears: 2,
+      howFarBackToDays: 7,
+      documentCount: 10,
+      retrievalMethod: 'latest',
+      primaryModel: 'gpt-4-turbo',
+      fallbackModel: 'claude-3-sonnet',
+      active: true
+    },
+    {
+      id: 'summarizer-3',
+      name: 'Patient History Compilation',
+      purpose: 'Compile comprehensive patient history from multiple sources',
+      pullFromEHR: false,
+      allowUpload: true,
+      allowText: true,
+      useSeparatePrompts: true,
+      commonPrompt: '',
+      uploadPrompt: 'Extract and summarize patient history from uploaded documents.',
+      textPrompt: 'Compile a comprehensive patient history from the provided text.',
+      doctorId: 1,
+      doctorName: 'Dr. Sarah Chen',
+      ehr: 'ECW',
+      selectedResource: '',
+      primaryModel: 'claude-3-opus',
+      fallbackModel: 'gpt-4-turbo',
+      active: true
+    },
+    
+    // Dr. Michael Rodriguez (AthenaOne) - Cardiology
+    {
+      id: 'summarizer-4',
+      name: 'Cardiology Lab Review',
+      purpose: 'Review and summarize cardiac lab results and biomarkers',
+      pullFromEHR: true,
+      allowUpload: false,
+      allowText: true,
+      useSeparatePrompts: true,
+      commonPrompt: '',
+      ehrPrompt: 'Extract and summarize cardiac enzyme levels, lipid panels, and other cardiac biomarkers.',
       textPrompt: 'Summarize the key cardiac lab values from the pasted text.',
       doctorId: 2,
       doctorName: 'Dr. Michael Rodriguez',
       ehr: 'AthenaOne',
       selectedResource: 'athenaone-lab-results-pdf',
-      resourceType: 'existing',
-      singleDate: '2024-12-01',
+      retrievalMethod: 'latest',
       documentCount: 10,
+      primaryModel: 'claude-3-opus',
+      fallbackModel: 'gpt-4-turbo',
+      active: true
+    },
+    {
+      id: 'summarizer-5',
+      name: 'Cardiac Consultation Notes',
+      purpose: 'Summarize cardiac consultation visits and recommendations',
+      pullFromEHR: true,
+      allowUpload: true,
+      allowText: false,
+      useSeparatePrompts: false,
+      commonPrompt: 'Summarize cardiac consultation findings, assessment, and treatment plan.',
+      doctorId: 2,
+      doctorName: 'Dr. Michael Rodriguez',
+      ehr: 'AthenaOne',
+      selectedResource: 'athenaone-previous-notes',
+      retrievalMethod: 'latest',
+      documentCount: 5,
+      primaryModel: 'gpt-4-turbo',
+      fallbackModel: 'claude-3-sonnet',
+      active: true
+    },
+    {
+      id: 'summarizer-6',
+      name: 'Imaging Results Summary',
+      purpose: 'Summarize cardiac imaging results including echocardiograms and stress tests',
+      pullFromEHR: true,
+      allowUpload: false,
+      allowText: false,
+      useSeparatePrompts: false,
+      commonPrompt: 'Extract key findings from cardiac imaging studies including measurements and abnormalities.',
+      doctorId: 2,
+      doctorName: 'Dr. Michael Rodriguez',
+      ehr: 'AthenaOne',
+      selectedResource: 'athenaone-imaging-results',
+      retrievalMethod: 'latest',
+      documentCount: 3,
+      primaryModel: 'claude-3-sonnet',
+      fallbackModel: 'gpt-4-turbo',
+      active: true
+    },
+    {
+      id: 'summarizer-7',
+      name: 'Problems List Tracker',
+      purpose: 'Track and summarize active cardiac problems and diagnoses',
+      pullFromEHR: true,
+      allowUpload: false,
+      allowText: false,
+      useSeparatePrompts: false,
+      commonPrompt: 'Extract and summarize active cardiac problems, their status, and related diagnoses.',
+      doctorId: 2,
+      doctorName: 'Dr. Michael Rodriguez',
+      ehr: 'AthenaOne',
+      selectedResource: 'athenaone-problems-list',
+      retrievalMethod: 'latest',
+      documentCount: 1,
+      primaryModel: 'gpt-4-turbo',
+      fallbackModel: 'claude-3-opus',
+      active: true
+    },
+    
+    // Dr. Emily Johnson (AthenaFlow) - Orthopedics
+    {
+      id: 'summarizer-8',
+      name: 'Orthopedic Visit Notes',
+      purpose: 'Summarize orthopedic consultation and treatment plans',
+      pullFromEHR: true,
+      allowUpload: true,
+      allowText: false,
+      useSeparatePrompts: false,
+      commonPrompt: 'Summarize orthopedic examination findings, diagnoses, and treatment recommendations.',
+      doctorId: 3,
+      doctorName: 'Dr. Emily Johnson',
+      ehr: 'AthenaFlow',
+      selectedResource: 'athenaflow-previous-notes',
+      howFarBackYears: 1,
+      toRecent: true,
+      documentCount: 8,
+      retrievalMethod: 'latest',
+      organizationIds: '12345, 67890',
+      primaryModel: 'claude-3-sonnet',
+      fallbackModel: 'gpt-4-turbo',
+      active: true
+    },
+    {
+      id: 'summarizer-9',
+      name: 'Surgical Procedure Notes',
+      purpose: 'Extract key information from orthopedic surgical procedures',
+      pullFromEHR: true,
+    allowUpload: false,
+      allowText: true,
+      useSeparatePrompts: true,
+      commonPrompt: '',
+      ehrPrompt: 'Extract surgical procedure details, findings, and post-operative recommendations.',
+      textPrompt: 'Summarize surgical procedure information from the provided text.',
+      doctorId: 3,
+      doctorName: 'Dr. Emily Johnson',
+      ehr: 'AthenaFlow',
+      selectedResource: 'athenaflow-previous-notes',
+      howFarBackYears: 1,
+      toRecent: true,
+      documentCount: 5,
+      retrievalMethod: 'latest',
+      primaryModel: 'gpt-4-turbo',
+      fallbackModel: 'claude-3-opus',
+      active: true
+    },
+    
+    // Dr. James Park (AdvancedMD) - Dermatology
+    {
+      id: 'summarizer-10',
+      name: 'Dermatology Consultation',
+      purpose: 'Summarize dermatology visits and skin condition assessments',
+      pullFromEHR: true,
+      allowUpload: true,
+    allowText: false,
+      useSeparatePrompts: false,
+      commonPrompt: 'Summarize skin examination findings, diagnoses, and treatment plans.',
+      doctorId: 4,
+      doctorName: 'Dr. James Park',
+      ehr: 'AdvancedMD',
+      selectedResource: 'advancedmd-previous-notes',
+      retrievalMethod: 'latest',
+      documentCount: 6,
+      templateIds: 'TEMPLATE_001, TEMPLATE_002',
+      primaryModel: 'claude-3-sonnet',
+      fallbackModel: 'gpt-4-turbo',
+      active: true
+    },
+    {
+      id: 'summarizer-11',
+      name: 'Clinical Document Review',
+      purpose: 'Review and summarize clinical documents including biopsy results',
+      pullFromEHR: true,
+      allowUpload: false,
+      allowText: true,
+      useSeparatePrompts: true,
+      commonPrompt: '',
+      ehrPrompt: 'Extract key findings from clinical documents including biopsy results and pathology reports.',
+      textPrompt: 'Summarize clinical document findings from the pasted text.',
+      doctorId: 4,
+      doctorName: 'Dr. James Park',
+      ehr: 'AdvancedMD',
+      selectedResource: 'advancedmd-clinical-documents',
+      retrievalMethod: 'latest',
+    documentCount: 5,
+      documentTypes: 'Biopsy Report, Pathology Report',
+      keywords: 'dermatology, skin, lesion',
+      primaryModel: 'gpt-4-turbo',
+      fallbackModel: 'claude-3-opus',
+      active: true
+    },
+    
+    // Dr. Lisa Thompson (Charm) - Internal Medicine
+    {
+      id: 'summarizer-12',
+      name: 'Internal Medicine Visit Summary',
+      purpose: 'Summarize internal medicine consultation visits',
+      pullFromEHR: true,
+      allowUpload: true,
+      allowText: false,
+      useSeparatePrompts: false,
+      commonPrompt: 'Summarize internal medicine consultation including assessment and management plan.',
+      doctorId: 5,
+      doctorName: 'Dr. Lisa Thompson',
+      ehr: 'Charm',
+      selectedResource: 'charm-previous-notes',
+    retrievalMethod: 'latest',
+      documentCount: 7,
+    primaryModel: 'claude-3-sonnet',
+    fallbackModel: 'gpt-4-turbo',
+      active: true
+    },
+    {
+      id: 'summarizer-13',
+      name: 'Clinical Documents PDF Review',
+      purpose: 'Review and summarize clinical documents in PDF format',
+      pullFromEHR: true,
+      allowUpload: false,
+      allowText: false,
+      useSeparatePrompts: false,
+      commonPrompt: 'Extract and summarize key information from clinical documents.',
+      doctorId: 5,
+      doctorName: 'Dr. Lisa Thompson',
+      ehr: 'Charm',
+      selectedResource: 'charm-clinical-documents-pdf',
+      retrievalMethod: 'latest',
+      documentCount: 5,
+      documentTypes: 'Consultation Note, Discharge Summary',
+      primaryModel: 'gpt-4-turbo',
+      fallbackModel: 'claude-3-sonnet',
+      active: true
+    },
+    {
+      id: 'summarizer-14',
+      name: 'Patient History Compilation',
+      purpose: 'Compile comprehensive patient history from multiple sources',
+      pullFromEHR: false,
+      allowUpload: true,
+      allowText: true,
+      useSeparatePrompts: true,
+      commonPrompt: '',
+      uploadPrompt: 'Extract and compile patient history from uploaded documents.',
+      textPrompt: 'Compile a comprehensive patient history from the provided text.',
+      doctorId: 5,
+      doctorName: 'Dr. Lisa Thompson',
+      ehr: 'Charm',
+      selectedResource: '',
+      primaryModel: 'claude-3-opus',
+      fallbackModel: 'gpt-4-turbo',
+      active: true
+    },
+    
+    // Dr. Robert Kim (DrChrono) - Family Medicine
+    {
+      id: 'summarizer-15',
+      name: 'Family Medicine Visit Notes',
+      purpose: 'Summarize family medicine visits and preventive care',
+      pullFromEHR: true,
+      allowUpload: true,
+      allowText: false,
+      useSeparatePrompts: false,
+      commonPrompt: 'Summarize family medicine visit including chief complaint, assessment, and plan.',
+      doctorId: 6,
+      doctorName: 'Dr. Robert Kim',
+      ehr: 'DrChrono',
+      selectedResource: 'drchrono-previous-notes',
+      retrievalMethod: 'latest',
+      documentCount: 5,
+      primaryModel: 'claude-3-sonnet',
+      fallbackModel: 'gpt-4-turbo',
+      active: true
+    },
+    {
+      id: 'summarizer-16',
+      name: 'Preventive Care Summary',
+      purpose: 'Track and summarize preventive care measures and screenings',
+      pullFromEHR: true,
+      allowUpload: false,
+      allowText: true,
+      useSeparatePrompts: true,
+      commonPrompt: '',
+      ehrPrompt: 'Extract preventive care measures, screenings, and vaccination records.',
+      textPrompt: 'Summarize preventive care information from the pasted text.',
+      doctorId: 6,
+      doctorName: 'Dr. Robert Kim',
+      ehr: 'DrChrono',
+      selectedResource: 'drchrono-previous-notes',
+      retrievalMethod: 'latest',
+      documentCount: 10,
+      primaryModel: 'gpt-4-turbo',
+      fallbackModel: 'claude-3-opus',
+      active: true
+    },
+    
+    // Dr. Amanda White (Greenway) - Pediatrics
+    {
+      id: 'summarizer-17',
+      name: 'Pediatric Visit Summary',
+      purpose: 'Summarize pediatric visits and child health assessments',
+      pullFromEHR: true,
+      allowUpload: true,
+      allowText: false,
+      useSeparatePrompts: false,
+      commonPrompt: 'Summarize pediatric visit including growth metrics, developmental milestones, and treatment plan.',
+      doctorId: 7,
+      doctorName: 'Dr. Amanda White',
+      ehr: 'Greenway',
+      selectedResource: 'greenway-previous-notes',
+      retrievalMethod: 'latest',
+      primaryModel: 'claude-3-sonnet',
+      fallbackModel: 'gpt-4-turbo',
+      active: true
+    },
+    {
+      id: 'summarizer-18',
+      name: 'Vaccination Record Tracker',
+      purpose: 'Track and summarize vaccination records and schedules',
+      pullFromEHR: true,
+      allowUpload: false,
+      allowText: true,
+      useSeparatePrompts: true,
+      commonPrompt: '',
+      ehrPrompt: 'Extract vaccination records and immunization schedules from EHR.',
+      textPrompt: 'Summarize vaccination information from the pasted text.',
+      doctorId: 7,
+      doctorName: 'Dr. Amanda White',
+      ehr: 'Greenway',
+      selectedResource: 'greenway-previous-notes',
+      retrievalMethod: 'latest',
+      primaryModel: 'gpt-4-turbo',
+      fallbackModel: 'claude-3-sonnet',
+      active: true
+    },
+    {
+      id: 'summarizer-19',
+      name: 'Growth and Development Notes',
+      purpose: 'Track pediatric growth charts and developmental milestones',
+      pullFromEHR: false,
+      allowUpload: true,
+      allowText: true,
+      useSeparatePrompts: true,
+      commonPrompt: '',
+      uploadPrompt: 'Extract growth metrics and developmental milestones from uploaded documents.',
+      textPrompt: 'Summarize growth and development information from the provided text.',
+      doctorId: 7,
+      doctorName: 'Dr. Amanda White',
+      ehr: 'Greenway',
+      selectedResource: '',
       primaryModel: 'claude-3-opus',
       fallbackModel: 'gpt-4-turbo',
       active: true
@@ -144,42 +514,7 @@ const SummarizerPrototype = () => {
   ]);
 
   // Form data for create summarizer
-  const [formData, setFormData] = useState({
-    name: '',
-    purpose: '',
-    pullFromEHR: false,
-    allowUpload: false,
-    allowText: false,
-    useSeparatePrompts: false, // Default: one prompt for all
-    commonPrompt: '', // Single prompt for all types
-    resourceType: 'existing',
-    selectedResource: '', // Now stores resource ID from EHR_RESOURCES
-    newResourceDesc: '',
-    dataSelection: 'count',
-    documentCount: 5,
-    dateFrom: '',
-    dateTo: '',
-    singleDate: '',
-    organizationIds: '',
-    templateIds: '',
-    keywords: '',
-    visitTypes: '',
-    sortingDirection: '',
-    documentTypes: '',
-    fileType: '',
-    ehrPrompt: '',
-    uploadPrompt: '',
-    textPrompt: '',
-    primaryModel: 'claude-3-sonnet',
-    fallbackModel: 'gpt-4-turbo',
-    avg_summarization_time: 60,
-    // Advanced settings
-    create_intermediate: true,
-    depends_on_summarisers: [],
-    active: true,
-    // Variables (tied to the selected EHR resource)
-    variables: [] // Array of { name, extractionMethod, selectedSection?, llmQuery? }
-  });
+  const [formData, setFormData] = useState(DEFAULT_FORM_DATA);
   
   // Advanced settings visibility state
   const [showAdvancedSettings, setShowAdvancedSettings] = useState(false);
@@ -207,11 +542,27 @@ const SummarizerPrototype = () => {
     name: '',
     extractionMethod: '',
     selectedSection: '',
+    nodePath: '',
+    regexPattern: '',
     llmQuery: ''
+  });
+  
+  // Custom sections that extend the base template hierarchy
+  const [customSections, setCustomSections] = useState({});
+  
+  // State for creating new section modal
+  const [showCreateSectionModal, setShowCreateSectionModal] = useState(false);
+  const [newSectionData, setNewSectionData] = useState({
+    level: 'parent', // 'parent', 'child', 'grandchild'
+    parentKey: '',
+    childKey: '',
+    name: '',
+    key: ''
   });
   
   // Track summarizers added to each section (including children and grandchildren)
   const [sectionSummarizers, setSectionSummarizers] = useState({
+    'patient-recap': [],
     cc: [],
     'cc-primary': [],
     'cc-primary-description': [],
@@ -259,80 +610,13 @@ const SummarizerPrototype = () => {
   const [createType, setCreateType] = useState(null); // 'summarizer' | null
   const [showCreateTypeModal, setShowCreateTypeModal] = useState(false);
   const [editingSummarizerId, setEditingSummarizerId] = useState(null);
+  const [showCopySummarizerModal, setShowCopySummarizerModal] = useState(false);
+  const [copySourceDoctorForSummarizer, setCopySourceDoctorForSummarizer] = useState(null);
 
   // ============================================================================
   // HELPER FUNCTIONS
   // ============================================================================
   
-  // Generate default 1000-character prompts
-  const generateDefaultPrompt = (type) => {
-    const prompts = {
-      common: `You are a medical documentation assistant specializing in creating comprehensive, accurate, and clinically relevant summaries from patient medical records. Your task is to analyze the provided medical information and generate a structured summary that captures all essential clinical details while maintaining medical accuracy and clarity.
-
-When processing medical data, please:
-1. Extract and organize key clinical information including patient demographics, chief complaints, history of present illness, review of systems, physical examination findings, assessment, and plan
-2. Identify and highlight critical medical findings, diagnoses, medications, allergies, and important clinical decisions
-3. Preserve medical terminology and clinical context while ensuring the summary is readable and well-structured
-4. Note any discrepancies, missing information, or areas requiring clarification
-5. Maintain patient privacy and confidentiality throughout the summarization process
-6. Format the output in a clear, hierarchical structure that facilitates easy review by healthcare providers
-7. Include relevant dates, timelines, and temporal relationships between clinical events
-8. Cross-reference related information across different sections of the medical record
-9. Identify and flag any urgent or critical findings that require immediate attention
-10. Ensure all numerical values, measurements, and clinical parameters are accurately represented
-
-The summary should be comprehensive yet concise, providing healthcare providers with a clear understanding of the patient's clinical status, treatment history, and care plan.`,
-      
-      ehr: `You are a specialized medical documentation assistant focused on extracting and summarizing information from Electronic Health Record (EHR) systems. Your primary responsibility is to process structured and unstructured data from EHR systems and transform it into coherent, clinically meaningful summaries.
-
-When processing EHR data, please:
-1. Extract structured data elements including lab results, vital signs, medications, diagnoses, procedures, and clinical notes
-2. Identify and organize information by encounter date, provider, and clinical context
-3. Highlight trends and patterns in clinical data over time, such as changes in lab values, vital signs, or medication regimens
-4. Cross-reference information across different EHR modules (e.g., connect lab results to relevant clinical notes)
-5. Identify and flag abnormal values, critical findings, or alerts that require clinical attention
-6. Preserve the chronological sequence of clinical events and encounters
-7. Extract and summarize provider notes, including assessment and plan details
-8. Identify medication changes, dosage adjustments, and medication-related clinical decisions
-9. Note any care coordination elements, referrals, or follow-up requirements
-10. Ensure compliance with clinical documentation standards and maintain data integrity
-
-The EHR summary should provide a comprehensive view of the patient's medical history, current status, and ongoing care plan as documented in the electronic health record system.`,
-      
-      upload: `You are a medical documentation assistant specialized in processing uploaded medical documents, including PDFs, scanned records, and other file formats. Your task is to extract, analyze, and summarize medical information from these documents while maintaining accuracy and clinical relevance.
-
-When processing uploaded documents, please:
-1. Extract text and structured data from PDFs, scanned images, and other document formats
-2. Identify document type (e.g., lab report, imaging study, consultation note, discharge summary, referral letter)
-3. Extract key clinical information including patient identifiers, dates, providers, diagnoses, findings, and recommendations
-4. Preserve numerical values, measurements, and clinical parameters with their units and reference ranges
-5. Identify and highlight abnormal findings, critical values, or urgent clinical information
-6. Maintain the original document structure and organization where possible
-7. Note any image quality issues, missing pages, or illegible sections that may affect data extraction
-8. Cross-reference information within the document to ensure consistency and completeness
-9. Format the summary in a clear, structured manner that facilitates clinical review
-10. Include document metadata such as source, date, and provider information when available
-
-The summary should accurately represent the content of the uploaded document while presenting the information in a format that is easy to review and integrate into the patient's medical record.`,
-      
-      text: `You are a medical documentation assistant designed to process and summarize medical information provided as free-text input. Your task is to analyze pasted or typed medical text and extract key clinical information to create a structured, comprehensive summary.
-
-When processing pasted text, please:
-1. Identify and extract key clinical elements including symptoms, diagnoses, medications, procedures, and clinical findings
-2. Organize the information into logical sections (e.g., history, examination, assessment, plan)
-3. Identify temporal relationships and sequence of events mentioned in the text
-4. Extract numerical values, measurements, and clinical parameters with appropriate context
-5. Identify and highlight critical or urgent information that requires immediate attention
-6. Note any ambiguities, incomplete information, or areas requiring clarification
-7. Preserve medical terminology and clinical context while ensuring readability
-8. Identify relationships between different pieces of information (e.g., symptoms and diagnoses)
-9. Format the summary in a clear, hierarchical structure
-10. Maintain the clinical accuracy and integrity of the information provided
-
-The summary should transform unstructured text input into a well-organized, clinically relevant summary that captures all essential information while maintaining accuracy and clarity.`
-    };
-    return prompts[type] || prompts.common;
-  };
 
   // Get summariser options for dropdown (same doctor only)
   const getSummariserOptions = () => {
@@ -389,10 +673,10 @@ The summary should transform unstructured text input into a well-organized, clin
   // ============================================================================
   // Now imported from config - templateHierarchy is imported at the top
 
-  // Pre-fill prompts with defaults when input types are selected
+  // Pre-fill prompts with defaults when file types are selected
   useEffect(() => {
     if (!formData.pullFromEHR && !formData.allowUpload && !formData.allowText) {
-      return; // No input types selected yet
+      return; // No file types selected yet
     }
 
     // Only pre-fill if prompts are empty (to avoid overwriting user edits)
@@ -456,90 +740,9 @@ The summary should transform unstructured text input into a well-organized, clin
   // DATA CONSTANTS
   // ============================================================================
   // EHR color mapping for demo
-  const ehrColors = {
-    ECW: { bg: 'bg-blue-50', border: 'border-blue-200', text: 'text-blue-700', badge: 'bg-blue-100' },
-    AthenaOne: { bg: 'bg-green-50', border: 'border-green-200', text: 'text-green-700', badge: 'bg-green-100' },
-    AthenaFlow: { bg: 'bg-purple-50', border: 'border-purple-200', text: 'text-purple-700', badge: 'bg-purple-100' },
-    AdvancedMD: { bg: 'bg-amber-50', border: 'border-amber-200', text: 'text-amber-700', badge: 'bg-amber-100' },
-    Charm: { bg: 'bg-pink-50', border: 'border-pink-200', text: 'text-pink-700', badge: 'bg-pink-100' },
-    DrChrono: { bg: 'bg-indigo-50', border: 'border-indigo-200', text: 'text-indigo-700', badge: 'bg-indigo-100' },
-    Greenway: { bg: 'bg-teal-50', border: 'border-teal-200', text: 'text-teal-700', badge: 'bg-teal-100' }
-  };
-
-  const doctors = [
-    {
-      id: 1,
-      name: "Dr. Sarah Chen",
-      email: "s.chen@dent-neuro.com",
-      specialty: "Neurology",
-      ehr: "ECW",
-      summarizers: 8,
-      lastActive: "2 hours ago",
-      status: "active"
-    },
-    {
-      id: 2,
-      name: "Dr. Michael Rodriguez",
-      email: "m.rodriguez@cardiocare.com",
-      specialty: "Cardiology", 
-      ehr: "AthenaOne",
-      summarizers: 12,
-      lastActive: "1 day ago",
-      status: "active"
-    },
-    {
-      id: 3,
-      name: "Dr. Emily Johnson",
-      email: "e.johnson@orthoplex.com",
-      specialty: "Orthopedics",
-      ehr: "AthenaFlow",
-      summarizers: 6,
-      lastActive: "3 hours ago",
-      status: "active"
-    },
-    {
-      id: 4,
-      name: "Dr. James Park",
-      email: "j.park@dermaclinic.com", 
-      specialty: "Dermatology",
-      ehr: "AdvancedMD",
-      summarizers: 3,
-      lastActive: "5 days ago",
-      status: "inactive"
-    },
-    {
-      id: 5,
-      name: "Dr. Lisa Thompson",
-      email: "l.thompson@charmcare.com",
-      specialty: "Internal Medicine",
-      ehr: "Charm",
-      summarizers: 5,
-      lastActive: "1 hour ago",
-      status: "active"
-    },
-    {
-      id: 6,
-      name: "Dr. Robert Kim",
-      email: "r.kim@drchrono.com",
-      specialty: "Family Medicine",
-      ehr: "DrChrono",
-      summarizers: 7,
-      lastActive: "4 hours ago",
-      status: "active"
-    },
-    {
-      id: 7,
-      name: "Dr. Maria Garcia",
-      email: "m.garcia@greenway.com",
-      specialty: "Pediatrics",
-      ehr: "Greenway",
-      summarizers: 4,
-      lastActive: "2 days ago",
-      status: "active"
-    }
-  ];
-
-  const practices = ['all', 'Neurology', 'Cardiology', 'Orthopedics', 'Dermatology'];
+  const ehrColors = EHR_COLORS;
+  const doctors = MOCK_DOCTORS;
+  const practices = PRACTICES;
 
   const filteredDoctors = doctors.filter(doctor => {
     const matchesSearch = doctor.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
@@ -575,9 +778,7 @@ The summary should transform unstructured text input into a well-organized, clin
       allowText: summarizer.allowText,
       useSeparatePrompts: summarizer.useSeparatePrompts,
       commonPrompt: summarizer.commonPrompt || '',
-      resourceType: summarizer.resourceType || 'existing',
       selectedResource: summarizer.selectedResource || '',
-      newResourceDesc: summarizer.newResourceDesc || '',
       dataSelection: summarizer.dataSelection || 'count',
       documentCount: summarizer.documentCount || 5,
       dateFrom: summarizer.dateFrom || '',
@@ -610,7 +811,7 @@ The summary should transform unstructured text input into a well-organized, clin
     setEditingSummarizerId(null);
     setShowAddVariableForm(false);
     setEditingVariableIndex(null);
-    setNewVariable({ name: '', extractionMethod: '', selectedSection: '', llmQuery: '' });
+    setNewVariable({ name: '', extractionMethod: '', selectedSection: '', nodePath: '', regexPattern: '', llmQuery: '' });
     setMaximizedPromptField(null);
     setMaximizedPromptValue('');
     setFormData({
@@ -621,13 +822,17 @@ The summary should transform unstructured text input into a well-organized, clin
       allowText: false,
       useSeparatePrompts: false,
       commonPrompt: '',
-      resourceType: 'existing',
       selectedResource: '',
-      newResourceDesc: '',
       dataSelection: 'count',
       documentCount: 5,
       dateFrom: '',
       dateTo: '',
+      howFarBackYears: 0,
+      howFarBackMonths: 0,
+      howFarBackDays: 0,
+      howFarBackToDays: null,
+      toRecent: false,
+      retrievalMethod: 'latest',
       singleDate: '',
       organizationIds: '',
       templateIds: '',
@@ -824,6 +1029,7 @@ The summary should transform unstructured text input into a well-organized, clin
   useEffect(() => {
     const handleClickOutside = (event) => {
       // Close View All dropdowns
+      setCellSummarizerDropdown(null);
       if (viewAllCreateDropdown && !event.target.closest('.view-all-dropdown-container')) {
         setViewAllCreateDropdown(null);
       }
@@ -840,7 +1046,7 @@ The summary should transform unstructured text input into a well-organized, clin
     return () => {
       document.removeEventListener('mousedown', handleClickOutside);
     };
-  }, [viewAllCreateDropdown, createTypeDropdown, openDropdown]);
+  }, [viewAllCreateDropdown, createTypeDropdown, openDropdown, cellSummarizerDropdown]);
 
   const jumpToSection = (templateTab, sectionId) => {
     // Switch to templates view and the correct tab
@@ -1376,11 +1582,83 @@ The summary should transform unstructured text input into a well-organized, clin
   );
 
 
+  // Handler for copy doctor action
+  const handleCopyDoctor = () => {
+    const validEmails = targetDoctorEmails.filter(e => e.trim());
+    if (validEmails.length === 0) {
+      alert('Please enter at least one email address');
+      return;
+    }
+    if (!targetEHR) {
+      alert('Please select target EHR system');
+      return;
+    }
+
+    const isSameEHR = targetEHR === copySourceDoctor?.ehr;
+
+    if (isSameEHR) {
+      // Same EHR - complete copy, show success
+      alert(`Configuration copied to ${validEmails.length} doctor${validEmails.length > 1 ? 's' : ''} successfully!\n\n✓ Full configuration copied\n✓ Ready to use immediately`);
+      setShowCopyDoctorModal(false);
+      setTargetDoctorEmails(['']);
+      setTargetEHR('');
+    } else {
+      // Different EHR - show resource mapping modal
+      const summarizersNeedingMapping = [
+        { id: 'lab', name: '📊 Lab Reports', pullFromEHR: true, currentResource: 'Lab Results - Neurology Panel' },
+        { id: 'imaging', name: '🖼️ Imaging Reports', pullFromEHR: true, currentResource: 'Clinical Documents - MRI Scans' },
+        { id: 'notes', name: '📄 Previous Notes', pullFromEHR: false },
+        { id: 'medication', name: '💊 Medication', pullFromEHR: true, currentResource: 'Medication Records - Active Prescriptions' }
+      ].filter(s => s.pullFromEHR);
+
+      setPendingResourceMappings(summarizersNeedingMapping);
+      setShowCopyDoctorModal(false);
+      setShowResourceMappingModal(true);
+    }
+  };
+
   // ============================================================================
   // VIEWS
   // ============================================================================
   // DOCTORS VIEW
   if (currentView === 'doctors') {
+    return (
+      <>
+        <DoctorsView
+          searchTerm={searchTerm}
+          setSearchTerm={setSearchTerm}
+          selectedPractice={selectedPractice}
+          setSelectedPractice={setSelectedPractice}
+          doctors={doctors}
+          filteredDoctors={filteredDoctors}
+          createTypeDropdown={createTypeDropdown}
+          setCreateTypeDropdown={setCreateTypeDropdown}
+          handleCreateSummarizer={handleCreateSummarizer}
+          handleSelectCreateType={handleSelectCreateType}
+          handleConfigureTemplates={handleConfigureTemplates}
+          setCurrentView={setCurrentView}
+          setSelectedDoctor={setSelectedDoctor}
+          maskEmail={maskEmail}
+        />
+        
+        <CopyDoctorModal
+          showCopyDoctorModal={showCopyDoctorModal}
+          setShowCopyDoctorModal={setShowCopyDoctorModal}
+          copySourceDoctor={copySourceDoctor}
+          targetEHR={targetEHR}
+          setTargetEHR={setTargetEHR}
+          targetDoctorEmails={targetDoctorEmails}
+          updateEmailField={updateEmailField}
+          removeEmailField={removeEmailField}
+          addEmailField={addEmailField}
+          handleCopyDoctor={handleCopyDoctor}
+        />
+      </>
+    );
+  }
+
+  // OLD DOCTORS VIEW (keeping for reference, will be removed)
+  if (false && currentView === 'doctors') {
     return (
       <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50">
         <div className="max-w-7xl mx-auto px-6 py-8">
@@ -1395,11 +1673,11 @@ The summary should transform unstructured text input into a well-organized, clin
               </h1>
               </div>
               <button
-                onClick={() => setCurrentView('manage-documents')}
-                className="px-4 py-2 bg-gradient-to-r from-slate-600 to-slate-700 hover:from-slate-700 hover:to-slate-800 text-white rounded-lg text-sm font-medium flex items-center gap-2 transition-all duration-200 shadow-sm hover:shadow-md"
+                onClick={() => setCurrentView('bulk-transfer')}
+                className="px-4 py-2 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white rounded-lg text-sm font-medium flex items-center gap-2 transition-all duration-200 shadow-sm hover:shadow-md"
               >
-                <Settings className="w-4 h-4" />
-                Manage Documents
+                <Copy className="w-4 h-4" />
+                Bulk Transfer
               </button>
             </div>
             <p className="text-slate-600 text-lg">Create summarizers and configure templates for healthcare providers</p>
@@ -1457,7 +1735,7 @@ The summary should transform unstructured text input into a well-organized, clin
                             {doctor.ehr}
                           </span>
                           </div>
-                        <p className="text-sm text-slate-600 truncate">{doctor.email}</p>
+                        <p className="text-sm text-slate-600 truncate">{maskEmail(doctor.email)}</p>
                       </div>
                     </div>
                     
@@ -1491,7 +1769,7 @@ The summary should transform unstructured text input into a well-organized, clin
                             >
                               <span className="text-xl">📊</span>
                               <div>
-                                <div className="font-medium text-slate-700">Create Summarizer</div>
+                                <div className="font-medium text-slate-700">Add Summarizer</div>
                                 <div className="text-xs text-slate-500">Extract and summarize data from EHR</div>
                               </div>
                             </button>
@@ -1507,33 +1785,6 @@ The summary should transform unstructured text input into a well-organized, clin
                         Configure
                       </button>
 
-                      <div className="relative more-dropdown-container">
-                        <button
-                          onClick={() => setOpenDropdown(openDropdown === doctor.id ? null : doctor.id)}
-                          className="w-9 h-9 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg flex items-center justify-center transition-all duration-200"
-                        >
-                          <MoreVertical className="w-4 h-4" />
-                        </button>
-
-                        {openDropdown === doctor.id && (
-                          <div className="absolute right-0 mt-2 w-56 bg-white rounded-xl shadow-xl border border-slate-200 py-2 z-[100]" onClick={(e) => e.stopPropagation()}>
-                            <button
-                              onClick={() => handleCopySummarizer(doctor)}
-                              className="w-full px-4 py-2.5 text-left text-sm hover:bg-slate-50 transition-colors flex items-center gap-3"
-                            >
-                              <Copy className="w-4 h-4 text-slate-600" />
-                              <span className="text-slate-700 font-medium">Copy Summarizer</span>
-                            </button>
-                            <button
-                              onClick={() => handleCopyDoctorConfig(doctor)}
-                              className="w-full px-4 py-2.5 text-left text-sm hover:bg-slate-50 transition-colors flex items-center gap-3"
-                            >
-                              <Copy className="w-4 h-4 text-slate-600" />
-                              <span className="text-slate-700 font-medium">Copy Doctor Configuration</span>
-                            </button>
-                          </div>
-                        )}
-                      </div>
                     </div>
                   </div>
                 </div>
@@ -1541,143 +1792,6 @@ The summary should transform unstructured text input into a well-organized, clin
               })}
             </div>
           </div>
-
-          {/* Copy Summarizer Modal */}
-          {showCopySummarizerModal && (
-            <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-              <div className="bg-white rounded-2xl p-8 max-w-3xl w-full max-h-[85vh] overflow-y-auto shadow-2xl">
-                <div className="flex justify-between items-center mb-6">
-                  <h2 className="text-2xl font-bold text-slate-800">
-                    Copy Summarizer
-                  </h2>
-                  <button
-                    onClick={() => setShowCopySummarizerModal(false)}
-                    className="text-gray-400 hover:text-gray-600 text-3xl w-8 h-8 flex items-center justify-center transition-colors"
-                  >
-                    ×
-                  </button>
-                </div>
-
-                {/* Source Doctor Info */}
-                <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 mb-6">
-                  <div className="text-sm text-blue-700 font-semibold mb-2">Copying From:</div>
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 bg-gradient-to-r from-blue-500 to-purple-500 rounded-lg flex items-center justify-center text-white font-semibold text-sm">
-                      {copySourceDoctor?.name.split(' ').map(n => n[0]).join('')}
-                    </div>
-                    <div>
-                      <div className="font-semibold text-slate-800">{copySourceDoctor?.name}</div>
-                      <div className="text-sm text-slate-600">{copySourceDoctor?.ehr} EHR • {copySourceDoctor?.specialty}</div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Summarizer Selection */}
-                <div className="mb-6">
-                  <label className="block text-sm font-semibold text-slate-700 mb-3">
-                    Select Summarizers to Copy * (Multiple selection allowed)
-                  </label>
-                  <div className="space-y-2">
-                    {[
-                      { id: 'lab', name: '📊 Lab Reports', count: 5 },
-                      { id: 'notes', name: '📄 Previous Notes', count: 3 },
-                      { id: 'imaging', name: '🖼️ Imaging Reports', count: 7 },
-                      { id: 'medication', name: '💊 Medication', count: 2 }
-                    ].map(summarizer => (
-                      <div
-                        key={summarizer.id}
-                        onClick={() => toggleSummarizerSelection(summarizer.id)}
-                        className={`border-2 rounded-xl p-4 cursor-pointer transition-all ${
-                          selectedSummarizers.includes(summarizer.id)
-                            ? 'border-blue-500 bg-blue-50'
-                            : 'border-slate-200 hover:border-blue-300 hover:bg-blue-50/30'
-                        }`}
-                      >
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-3">
-                            <input
-                              type="checkbox"
-                              checked={selectedSummarizers.includes(summarizer.id)}
-                              onChange={() => {}}
-                              className="w-4 h-4 text-blue-600 rounded"
-                            />
-                            <span className="font-semibold text-slate-800">{summarizer.name}</span>
-                          </div>
-                          <span className="text-sm text-slate-500">{summarizer.count} configurations</span>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                  {selectedSummarizers.length > 0 && (
-                    <div className="mt-3 text-sm text-blue-600 font-semibold">
-                      {selectedSummarizers.length} summarizer{selectedSummarizers.length > 1 ? 's' : ''} selected
-                    </div>
-                  )}
-                </div>
-
-                {/* Target Doctor Selection */}
-                <div className="mb-6">
-                  <label className="block text-sm font-semibold text-slate-700 mb-3">
-                    Copy To (Target Doctor) *
-                  </label>
-                  <select className="w-full p-3 border-2 border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors">
-                    <option value="">Select a doctor...</option>
-                    {doctors.filter(d => d.id !== copySourceDoctor?.id).map(doctor => (
-                      <option key={doctor.id} value={doctor.id}>
-                        {doctor.name} - {doctor.ehr} EHR ({doctor.specialty})
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                {/* EHR Compatibility Warning */}
-                <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 mb-6">
-                  <div className="flex gap-3">
-                    <AlertCircle className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
-                    <div>
-                      <div className="font-semibold text-amber-800 mb-1">Copy Scope</div>
-                      <div className="text-sm text-amber-700">
-                        <strong>Same EHR:</strong> Complete configuration (prompts + resource IDs + mappings) will be copied.<br />
-                        <strong>Different EHR:</strong> Only prompts will be copied. EHR resource configurations must be reconfigured.
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Action Buttons */}
-                <div className="flex gap-3 justify-end">
-                  <button
-                    onClick={() => {
-                      setShowCopySummarizerModal(false);
-                      setSelectedSummarizers([]);
-                    }}
-                    className="px-6 py-2.5 border-2 border-slate-300 text-slate-700 rounded-xl font-semibold hover:bg-slate-50 transition-colors"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    onClick={() => {
-                      if (selectedSummarizers.length === 0) {
-                        alert('Please select at least one summarizer to copy');
-                        return;
-                      }
-                      alert(`${selectedSummarizers.length} summarizer${selectedSummarizers.length > 1 ? 's' : ''} copied successfully!`);
-                      setShowCopySummarizerModal(false);
-                      setSelectedSummarizers([]);
-                    }}
-                    disabled={selectedSummarizers.length === 0}
-                    className={`px-6 py-2.5 rounded-xl font-semibold shadow-lg transition-all duration-200 ${
-                      selectedSummarizers.length === 0
-                        ? 'bg-slate-300 text-slate-500 cursor-not-allowed'
-                        : 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white hover:shadow-xl'
-                    }`}
-                  >
-                    Copy {selectedSummarizers.length > 0 ? `${selectedSummarizers.length} ` : ''}Summarizer{selectedSummarizers.length > 1 ? 's' : ''}
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
 
           {/* Copy Doctor Configuration Modal */}
           {showCopyDoctorModal && (
@@ -2079,9 +2193,9 @@ The summary should transform unstructured text input into a well-organized, clin
                   className="bg-gradient-to-br from-blue-50 to-indigo-50 border-2 border-blue-200 hover:border-blue-500 hover:bg-blue-100 rounded-xl p-6 cursor-pointer transition-all duration-200 shadow-sm hover:shadow-md"
                 >
                   <div className="text-4xl mb-3">📊</div>
-                  <h3 className="text-lg font-bold text-slate-800 mb-2">Create Summarizer</h3>
+                  <h3 className="text-lg font-bold text-slate-800 mb-2">Add Summarizer</h3>
                   <p className="text-sm text-gray-600">
-                    Create a new summarizer to extract and summarize data from EHR
+                    Add a new summarizer to extract and summarize data from EHR
                   </p>
                 </div>
               </div>
@@ -2094,20 +2208,53 @@ The summary should transform unstructured text input into a well-organized, clin
 
   // SUMMARIZERS & VARIABLES VIEW
   if (currentView === 'summarizers-variables') {
+    return (
+      <SummarizersVariablesView
+        selectedDoctor={selectedDoctor}
+        createdSummarizers={createdSummarizers}
+        configMode={configMode}
+        setConfigMode={setConfigMode}
+        sectionSummarizers={sectionSummarizers}
+        setSectionSummarizers={setSectionSummarizers}
+        customSections={customSections}
+        cellSummarizerDropdown={cellSummarizerDropdown}
+        setCellSummarizerDropdown={setCellSummarizerDropdown}
+        pendingSummarizerSelection={pendingSummarizerSelection}
+        setPendingSummarizerSelection={setPendingSummarizerSelection}
+        promptEditModal={promptEditModal}
+        setPromptEditModal={setPromptEditModal}
+        promptModalAction={promptModalAction}
+        setPromptModalAction={setPromptModalAction}
+        showCreateTypeModal={showCreateTypeModal}
+        setShowCreateTypeModal={setShowCreateTypeModal}
+        onBack={() => setCurrentView('doctors')}
+        onEditSummarizer={handleEditSummarizer}
+        onSelectCreateType={handleSelectCreateType}
+        onJumpToSection={jumpToSection}
+      />
+    );
+  }
+
+  // Legacy code - keeping for reference (can be removed after testing)
+  if (false && currentView === 'summarizers-variables-legacy') {
     const doctorSummarizers = createdSummarizers.filter(s => s.doctorId === selectedDoctor?.id);
     
     // Combined View helpers
-    const templates = ['general', 'followup', 'neurology', 'initial'];
+    const templates = ['general', 'followup', 'neurology', 'initial', 'patient-recap'];
     const templateNames = {
       general: 'General Template',
       followup: 'Follow-up',
       neurology: 'Neurology',
-      initial: 'Initial Consultation'
+      initial: 'Initial Consultation',
+      'patient-recap': 'Patient Recap'
     };
 
     const getAllSections = () => {
       const sections = [];
-      Object.entries(templateHierarchy).forEach(([parentKey, parent]) => {
+      // Merge base templateHierarchy with custom sections
+      const mergedHierarchy = {...templateHierarchy, ...customSections};
+      
+      Object.entries(mergedHierarchy).forEach(([parentKey, parent]) => {
         sections.push({
           key: parentKey,
           name: parent.name,
@@ -2144,29 +2291,204 @@ The summary should transform unstructured text input into a well-organized, clin
     const allSections = getAllSections();
 
     const renderCellContent = (sectionKey, templateTab) => {
+      // Patient Recap template - special handling: only summarizer selection, no sections
+      if (templateTab === 'patient-recap' || sectionKey === 'patient-recap') {
+        const recapSummarizers = sectionSummarizers['patient-recap'] || [];
+        const cellKey = `patient-recap-${templateTab}`;
+        const isDropdownOpen = cellSummarizerDropdown === cellKey;
+        
+      if (configMode === 'summarizers') {
+          if (recapSummarizers.length === 0) {
+          return (
+              <div className="relative">
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setCellSummarizerDropdown(isDropdownOpen ? null : cellKey);
+                  }}
+                  className="w-full h-full min-h-[40px] flex items-center justify-center text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors border-2 border-dashed border-gray-300 hover:border-blue-400"
+                  title="Add summarizer to Patient Recap"
+                >
+                  <Plus className="w-5 h-5" />
+                </button>
+                
+                {isDropdownOpen && (
+                  <div 
+                    className="absolute top-full left-0 mt-1 w-64 bg-white rounded-lg shadow-xl border border-slate-200 py-2 z-50"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    {doctorSummarizers.length > 0 ? (
+                      doctorSummarizers.map(summarizer => (
+                        <button
+                          key={summarizer.id}
+                          onClick={() => {
+                            const newSummarizer = {
+                              id: `${summarizer.id}-patient-recap-${Date.now()}`,
+                              type: 'summarizer',
+                              name: summarizer.name,
+                              bgColor: '#dbeafe',
+                              color: '#1e40af',
+                              action: 'append'
+                            };
+                            setSectionSummarizers(prev => ({
+                              ...prev,
+                              'patient-recap': [...(prev['patient-recap'] || []), newSummarizer]
+                            }));
+                            setCellSummarizerDropdown(null);
+                          }}
+                          className="w-full px-4 py-2 text-left text-sm hover:bg-slate-50 transition-colors flex items-center gap-2"
+                        >
+                          <span className="text-lg">📊</span>
+                          <span className="font-medium text-slate-700">{summarizer.name}</span>
+                        </button>
+                      ))
+                    ) : (
+                      <div className="px-4 py-2 text-sm text-slate-500">
+                        No summarizers available. Create one first.
+                      </div>
+                    )}
+                  </div>
+                )}
+            </div>
+          );
+        }
+          
+        return (
+            <div className="space-y-1 relative">
+              {recapSummarizers.map(sum => (
+                <div
+                  key={sum.id}
+                  className="text-xs px-2 py-1 rounded hover:shadow-md transition-all cursor-pointer"
+                  style={{
+                    background: sum.bgColor || '#dbeafe',
+                    color: sum.color || '#1e40af'
+                  }}
+                >
+                  📊 {sum.name}
+                </div>
+              ))}
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setCellSummarizerDropdown(isDropdownOpen ? null : cellKey);
+                }}
+                className="mt-1 w-full flex items-center justify-center text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors border border-dashed border-gray-300 hover:border-blue-400 p-1"
+                title="Add another summarizer"
+              >
+                <Plus className="w-4 h-4" />
+              </button>
+              
+              {isDropdownOpen && (
+                <div 
+                  className="absolute top-full left-0 mt-1 w-64 bg-white rounded-lg shadow-xl border border-slate-200 py-2 z-50"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  {doctorSummarizers.length > 0 ? (
+                    doctorSummarizers.map(summarizer => (
+                      <button
+                        key={summarizer.id}
+                        onClick={() => {
+                          const newSummarizer = {
+                            id: `${summarizer.id}-patient-recap-${Date.now()}`,
+                            type: 'summarizer',
+                            name: summarizer.name,
+                            bgColor: '#dbeafe',
+                            color: '#1e40af',
+                            action: 'append'
+                          };
+                          setSectionSummarizers(prev => ({
+                            ...prev,
+                            'patient-recap': [...(prev['patient-recap'] || []), newSummarizer]
+                          }));
+                          setCellSummarizerDropdown(null);
+                        }}
+                        className="w-full px-4 py-2 text-left text-sm hover:bg-slate-50 transition-colors flex items-center gap-2"
+                      >
+                        <span className="text-lg">📊</span>
+                        <span className="font-medium text-slate-700">{summarizer.name}</span>
+                      </button>
+                    ))
+                  ) : (
+                    <div className="px-4 py-2 text-sm text-slate-500">
+                      No summarizers available. Create one first.
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          );
+        }
+        return null;
+      }
+      
       if (configMode === 'summarizers') {
         const summarizers = sectionSummarizers[sectionKey];
+        const cellKey = `${sectionKey}-${templateTab}`;
+        const isDropdownOpen = cellSummarizerDropdown === cellKey;
+        
         if (!summarizers || summarizers.length === 0) {
           return (
-            <div
-              onClick={() => jumpToSection(templateTab, sectionKey)}
-              className="text-gray-400 text-center py-2 cursor-pointer hover:text-gray-600 transition-colors"
-            >
-              —
+            <div className="relative">
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setCellSummarizerDropdown(isDropdownOpen ? null : cellKey);
+                }}
+                className="w-full h-full min-h-[40px] flex items-center justify-center text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors border-2 border-dashed border-gray-300 hover:border-blue-400"
+                title="Add summarizer"
+              >
+                <Plus className="w-5 h-5" />
+              </button>
+              
+              {isDropdownOpen && (
+                <div 
+                  className="absolute top-full left-0 mt-1 w-64 bg-white rounded-lg shadow-xl border border-slate-200 py-2 z-50"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  {doctorSummarizers.length > 0 ? (
+                    doctorSummarizers.map(summarizer => (
+                      <button
+                        key={summarizer.id}
+                        type="button"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          const selection = {
+                            sectionKey,
+                            template: templateTab,
+                            summarizerId: summarizer.id,
+                            summarizerName: summarizer.name
+                          };
+                          // Close dropdown first
+                          setCellSummarizerDropdown(null);
+                          // Set pending selection to show action modal
+                          setPendingSummarizerSelection(selection);
+                        }}
+                        className="w-full px-4 py-2 text-left text-sm hover:bg-slate-50 transition-colors flex items-center gap-2"
+                      >
+                        <span className="text-lg">📊</span>
+                        <span className="font-medium text-slate-700">{summarizer.name}</span>
+                      </button>
+                    ))
+                  ) : (
+                    <div className="px-4 py-2 text-sm text-slate-500">
+                      No summarizers available. Create one first.
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           );
         }
         return (
-          <div
-            onClick={() => jumpToSection(templateTab, sectionKey)}
-            className="space-y-1 cursor-pointer"
-          >
+          <div className="space-y-1 relative">
             {summarizers.map(sum => {
               const actionIcon = sum.action === 'append' ? '➕' : sum.action === 'prepend' ? '⬆️' : '💡';
               return (
                 <div
                   key={sum.id}
-                  className="text-xs px-2 py-1 rounded hover:shadow-md transition-all"
+                  onClick={() => jumpToSection(templateTab, sectionKey)}
+                  className="text-xs px-2 py-1 rounded hover:shadow-md transition-all cursor-pointer"
                   style={{
                     background: sum.bgColor,
                     color: sum.color
@@ -2176,18 +2498,167 @@ The summary should transform unstructured text input into a well-organized, clin
                 </div>
               );
             })}
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                setCellSummarizerDropdown(isDropdownOpen ? null : cellKey);
+              }}
+              className="mt-1 w-full flex items-center justify-center text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors border border-dashed border-gray-300 hover:border-blue-400 p-1"
+              title="Add another summarizer"
+            >
+              <Plus className="w-4 h-4" />
+            </button>
+            
+            {isDropdownOpen && (
+              <div 
+                className="absolute top-full left-0 mt-1 w-64 bg-white rounded-lg shadow-xl border border-slate-200 py-2 z-50"
+                onClick={(e) => e.stopPropagation()}
+              >
+                {doctorSummarizers.length > 0 ? (
+                  doctorSummarizers.map(summarizer => (
+                    <button
+                      key={summarizer.id}
+                      onClick={() => {
+                        setPendingSummarizerSelection({
+                          sectionKey,
+                          template: templateTab,
+                          summarizerId: summarizer.id,
+                          summarizerName: summarizer.name
+                        });
+                        setCellSummarizerDropdown(null);
+                      }}
+                      className="w-full px-4 py-2 text-left text-sm hover:bg-slate-50 transition-colors flex items-center gap-2"
+                    >
+                      <span className="text-lg">📊</span>
+                      <span className="font-medium text-slate-700">{summarizer.name}</span>
+                    </button>
+                  ))
+                ) : (
+                  <div className="px-4 py-2 text-sm text-slate-500">
+                    No summarizers available. Create one first.
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         );
       }
     };
     
     return (
+      <>
+        {/* Action Selection Modal - Step 1: Choose append/prepend/inform - Rendered outside scrollable container */}
+        {pendingSummarizerSelection && (
+          <div 
+            className="fixed inset-0 bg-black/50 flex items-center justify-center z-[9999]" 
+            style={{ position: 'fixed', zIndex: 9999 }}
+            onClick={() => setPendingSummarizerSelection(null)}
+          >
+            <div 
+              className="bg-white rounded-2xl p-6 max-w-md w-full mx-4 shadow-xl" 
+              onClick={(e) => e.stopPropagation()}
+              style={{ zIndex: 10000 }}
+            >
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-semibold text-slate-800">
+                  Choose Action Type
+                </h3>
+                <button
+                  type="button"
+                  onClick={() => setPendingSummarizerSelection(null)}
+                  className="text-slate-400 hover:text-slate-600 transition-colors"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+              
+              <div className="space-y-3 mb-6">
+                <p className="text-sm text-slate-600 mb-4">
+                  <span className="font-medium">Summarizer:</span> {pendingSummarizerSelection?.summarizerName || 'Unknown'}
+                </p>
+                
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-3">
+                    How should this summarizer be used? *
+                  </label>
+                  <div className="space-y-3">
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setPromptModalAction('append');
+                        setPromptEditModal(pendingSummarizerSelection);
+                        setPendingSummarizerSelection(null);
+                      }}
+                      className="w-full p-4 border-2 border-blue-300 bg-blue-50 hover:bg-blue-100 rounded-xl text-left transition-all"
+                    >
+                      <div className="flex items-center gap-3">
+                        <span className="text-2xl">➕</span>
+                        <div>
+                          <div className="font-semibold text-slate-800">Append to section</div>
+                          <div className="text-xs text-slate-600">Add content at the end of the section</div>
+                        </div>
+                      </div>
+                    </button>
+                    
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setPromptModalAction('prepend');
+                        setPromptEditModal(pendingSummarizerSelection);
+                        setPendingSummarizerSelection(null);
+                      }}
+                      className="w-full p-4 border-2 border-green-300 bg-green-50 hover:bg-green-100 rounded-xl text-left transition-all"
+                    >
+                      <div className="flex items-center gap-3">
+                        <span className="text-2xl">⬆️</span>
+                        <div>
+                          <div className="font-semibold text-slate-800">Prepend to section</div>
+                          <div className="text-xs text-slate-600">Add content at the beginning of the section</div>
+                        </div>
+                      </div>
+                    </button>
+                    
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setPromptModalAction('inform');
+                        setPromptEditModal(pendingSummarizerSelection);
+                        setPendingSummarizerSelection(null);
+                      }}
+                      className="w-full p-4 border-2 border-amber-300 bg-amber-50 hover:bg-amber-100 rounded-xl text-left transition-all"
+                    >
+                      <div className="flex items-center gap-3">
+                        <span className="text-2xl">💡</span>
+                        <div>
+                          <div className="font-semibold text-slate-800">Inform context</div>
+                          <div className="text-xs text-slate-600">Use as background information for the section</div>
+                        </div>
+                      </div>
+                    </button>
+                  </div>
+                </div>
+              </div>
+              
+              <div className="flex justify-end">
+                <button
+                  type="button"
+                  onClick={() => setPendingSummarizerSelection(null)}
+                  className="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-lg text-sm font-medium transition-colors"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
       <div className={`min-h-screen ${
-        viewAllMode === 'combined' 
-          ? (configMode === 'summarizers' 
+        configMode === 'summarizers' 
               ? 'bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50' 
-              : 'bg-gradient-to-br from-slate-50 via-purple-50 to-pink-50')
-          : 'bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50'
+          : 'bg-gradient-to-br from-slate-50 via-purple-50 to-pink-50'
       }`}>
         <div className="max-w-7xl mx-auto px-6 py-8">
           <div className="mb-8">
@@ -2207,92 +2678,29 @@ The summary should transform unstructured text input into a well-organized, clin
                   </div>
                   <div>
                     <h1 className="text-2xl font-bold text-slate-800">{selectedDoctor?.name}</h1>
-                    <p className="text-slate-600">{selectedDoctor?.email} • {selectedDoctor?.ehr} EHR</p>
-                  </div>
-                </div>
-                
-                {/* View Toggle */}
-                <div className="flex items-center gap-3">
-                  <div className="flex gap-2 bg-slate-100 rounded-lg p-1">
-                    <button
-                      onClick={() => setViewAllMode('list')}
-                      className={`px-4 py-2 rounded-md text-sm font-medium transition-all ${
-                        viewAllMode === 'list'
-                          ? 'bg-white text-slate-800 shadow-sm'
-                          : 'text-slate-600 hover:text-slate-800'
-                      }`}
-                    >
-                      List View
-                    </button>
-                    <button
-                      onClick={() => setViewAllMode('combined')}
-                      className={`px-4 py-2 rounded-md text-sm font-medium transition-all flex items-center gap-2 ${
-                        viewAllMode === 'combined'
-                          ? 'bg-white text-slate-800 shadow-sm'
-                          : 'text-slate-600 hover:text-slate-800'
-                      }`}
-                    >
-                      <TableIcon className="w-4 h-4" />
-                      Combined View
-                    </button>
+                    <p className="text-slate-600">{maskEmail(selectedDoctor?.email)} • {selectedDoctor?.ehr} EHR</p>
                   </div>
                 </div>
               </div>
             </div>
           </div>
 
-          {viewAllMode === 'list' ? (
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {/* Summarizers Section */}
-            <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-200/50 relative">
-              <div className="flex items-center justify-between mb-6">
-                <h2 className="text-xl font-semibold text-slate-800 flex items-center gap-2">
-                  <div className="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center text-blue-600 text-sm font-bold">
-                    📊
+          {/* Available Summarizers Bar */}
+          {configMode === 'summarizers' && (
+            <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border-2 border-blue-200/50 rounded-2xl p-6 mb-6">
+              <div className="text-sm font-bold text-gray-700 mb-3 uppercase tracking-wide">
+                Available Summarizers
                   </div>
-                  Summarizers
-                </h2>
-                <div className="relative z-10 view-all-dropdown-container">
-                  <button
-                    onClick={() => setViewAllCreateDropdown(viewAllCreateDropdown === 'summarizers' ? null : 'summarizers')}
-                    className="px-4 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-lg text-sm font-medium flex items-center gap-2 transition-all duration-200 shadow-sm hover:shadow-md"
-                  >
-                    <Plus className="w-4 h-4" />
-                    Create
-                    <ChevronRight className={`w-3 h-3 transition-transform ${viewAllCreateDropdown === 'summarizers' ? 'rotate-90' : ''}`} />
-                  </button>
-
-                  {viewAllCreateDropdown === 'summarizers' && (
-                    <div className="absolute right-0 mt-2 w-56 bg-white rounded-xl shadow-xl border border-slate-200 py-2 z-[100]" onClick={(e) => e.stopPropagation()}>
-                      <button
-                        onClick={() => {
-                          setViewAllCreateDropdown(null);
-                          handleSelectCreateType('summarizer');
-                        }}
-                        className="w-full px-4 py-2.5 text-left text-sm hover:bg-slate-50 transition-colors flex items-center gap-3"
-                      >
-                        <span className="text-xl">📊</span>
-                        <div>
-                          <div className="font-medium text-slate-700">Create Summarizer</div>
-                          <div className="text-xs text-slate-500">Extract and summarize data from EHR</div>
-                        </div>
-                      </button>
-                    </div>
-                  )}
-                </div>
-              </div>
-
+              <div className="flex gap-3 flex-wrap mb-3">
               {doctorSummarizers.length > 0 ? (
-                <div className="space-y-3">
-                  {doctorSummarizers.map(summarizer => (
+                  doctorSummarizers.map(summarizer => (
                     <div
                       key={summarizer.id}
-                      className="border border-slate-200 rounded-xl p-4 hover:border-blue-300 hover:shadow-md transition-all duration-200 group"
+                      className="px-4 py-2 bg-white border-2 border-blue-300 rounded-lg shadow-sm hover:shadow-md transition-all cursor-pointer"
+                      onClick={() => handleEditSummarizer(summarizer.id)}
                     >
-                      <div className="flex items-start justify-between">
-                        <div className="flex-1">
-                          <div className="flex items-center gap-2 mb-1">
-                            <h3 className="font-semibold text-slate-800">{summarizer.name}</h3>
+                      <div className="flex items-center gap-2">
+                        <span className="font-semibold text-slate-800">{summarizer.name}</span>
                             <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
                               summarizer.active !== false
                                 ? 'bg-green-100 text-green-700'
@@ -2301,89 +2709,16 @@ The summary should transform unstructured text input into a well-organized, clin
                               {summarizer.active !== false ? 'Active' : 'Inactive'}
                             </span>
                           </div>
-                          <p className="text-sm text-slate-600 mb-2">{summarizer.purpose}</p>
-                          <div className="flex flex-wrap gap-2 mb-2">
-                            {summarizer.pullFromEHR && (
-                              <span className="text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded-full">EHR</span>
-                            )}
-                            {summarizer.allowUpload && (
-                              <span className="text-xs bg-green-100 text-green-700 px-2 py-1 rounded-full">Upload</span>
-                            )}
-                            {summarizer.allowText && (
-                              <span className="text-xs bg-purple-100 text-purple-700 px-2 py-1 rounded-full">Text</span>
-                            )}
                           </div>
-                          {summarizer.selectedResource && (() => {
-                            const resource = getResourcesForEhr(summarizer.ehr).find(r => r.id === summarizer.selectedResource);
-                            return resource ? (
-                            <p className="text-xs text-slate-500 mb-2">
-                                Resource: {formatResourceOption(resource)}
-                            </p>
-                            ) : null;
-                          })()}
-                          {summarizer.variables && summarizer.variables.length > 0 && (
-                            <div className="mt-2">
-                              <p className="text-xs text-slate-500 mb-1 font-medium">Variables:</p>
-                              <div className="flex flex-wrap gap-1.5">
-                                {summarizer.variables.map((variable, idx) => (
-                                  <span
-                                    key={idx}
-                                    className="text-xs bg-purple-50 text-purple-700 px-2 py-0.5 rounded-full border border-purple-200"
-                                    title={variable.extractionMethod === 'pickSection' 
-                                      ? `Section: ${variable.selectedSection}` 
-                                      : `Query: ${variable.llmQuery}`}
-                                  >
-                                    🔹 {variable.name}
-                                  </span>
-                  ))}
-                </div>
-                </div>
+                  ))
+                ) : (
+                  <p className="text-slate-500 text-sm">No summarizers created yet</p>
               )}
             </div>
-                        <div className="flex items-center gap-2">
-                  <button
-                            onClick={() => {
-                              const newActiveState = !(summarizer.active !== false);
-                              setPendingActivateAction({ summarizerId: summarizer.id, newActiveState });
-                              setShowActivateConfirm(summarizer.id);
-                            }}
-                            className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-all duration-200 ${
-                              summarizer.active !== false
-                                ? 'bg-amber-100 text-amber-700 hover:bg-amber-200'
-                                : 'bg-green-100 text-green-700 hover:bg-green-200'
-                            }`}
-                            title={summarizer.active !== false ? 'Deactivate summarizer' : 'Activate summarizer'}
-                          >
-                            {summarizer.active !== false ? 'Deactivate' : 'Activate'}
-                  </button>
-                      <button
-                          onClick={() => handleEditSummarizer(summarizer.id)}
-                          className="opacity-0 group-hover:opacity-100 transition-opacity p-2 hover:bg-slate-100 rounded-lg"
-                          title="Edit summarizer"
-                        >
-                          <Pencil className="w-4 h-4 text-slate-600" />
-                        </button>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="text-center py-12 border-2 border-dashed border-slate-200 rounded-xl">
-                  <p className="text-slate-500 mb-4">No summarizers created yet</p>
-                  <button
-                    onClick={() => handleCreateSummarizer(selectedDoctor)}
-                    className="px-4 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-lg text-sm font-medium transition-all duration-200"
-                  >
-                    Create Your First Summarizer
-                  </button>
                 </div>
               )}
-            </div>
 
-          </div>
-          ) : (
-            // Combined View
+          {/* Combined View Only */}
             <div className="bg-white rounded-2xl shadow-lg border border-slate-200">
               {/* Mode Toggle: Summarizers vs Variables */}
               <div className="p-6 border-b border-slate-200">
@@ -2425,6 +2760,26 @@ The summary should transform unstructured text input into a well-organized, clin
                     </tr>
                   </thead>
                   <tbody>
+                    {/* Patient Recap template - special row */}
+                    {templates.includes('patient-recap') && (
+                      <tr className="border-b border-slate-200 hover:bg-slate-50/50 transition-colors bg-gradient-to-r from-purple-50 to-pink-50">
+                        <td className="pl-6 py-3 text-slate-900 font-bold text-base border-r-2 border-slate-200">
+                          Patient Recap
+                        </td>
+                        {templates.map(template => (
+                          <td
+                            key={`patient-recap-${template}`}
+                            className="px-4 py-3 border-r border-slate-200"
+                          >
+                            {template === 'patient-recap' 
+                              ? renderCellContent('patient-recap', template) 
+                              : <span className="text-gray-400">—</span>}
+                          </td>
+                        ))}
+                      </tr>
+                    )}
+                    
+                    {/* Regular template sections */}
                     {allSections.map((section) => {
                       let bgColor = 'bg-white';
                       let textColor = 'text-slate-900';
@@ -2462,7 +2817,9 @@ The summary should transform unstructured text input into a well-organized, clin
                               key={`${section.key}-${template}`}
                               className="px-4 py-3 border-r border-slate-200"
                             >
-                              {renderCellContent(section.key, template)}
+                              {template === 'patient-recap' 
+                                ? <span className="text-gray-400">—</span> 
+                                : renderCellContent(section.key, template)}
                             </td>
                           ))}
                         </tr>
@@ -2488,6 +2845,133 @@ The summary should transform unstructured text input into a well-organized, clin
                     <div className="flex items-center gap-2">
                       <span className="text-gray-400">—</span> No configuration
                     </div>
+                  </div>
+              </div>
+            </div>
+
+          {/* Prompt Edit Modal */}
+          {promptEditModal && (
+            <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setPromptEditModal(null)}>
+              <div className="bg-white rounded-2xl p-6 max-w-2xl w-full mx-4 shadow-xl" onClick={(e) => e.stopPropagation()}>
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-lg font-semibold text-slate-800">
+                    Assign Summarizer to Section
+                  </h3>
+                  <button
+                    onClick={() => setPromptEditModal(null)}
+                    className="text-slate-400 hover:text-slate-600 transition-colors"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+                
+                <div className="space-y-4 mb-4">
+                  <div>
+                    <p className="text-sm text-slate-600 mb-2">
+                      <span className="font-medium">Section:</span> {(() => {
+                        const allSections = getAllSections();
+                        const section = allSections.find(s => s.key === promptEditModal.sectionKey);
+                        return section ? section.name : promptEditModal.sectionKey;
+                      })()}
+                    </p>
+                    <p className="text-sm text-slate-600 mb-2">
+                      <span className="font-medium">Template:</span> {templateNames[promptEditModal.template]}
+                    </p>
+                    <p className="text-sm text-slate-600 mb-4">
+                      <span className="font-medium">Summarizer:</span> {promptEditModal.summarizerName}
+                    </p>
+                  </div>
+                  
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-2">
+                      Action Type *
+                    </label>
+                    <div className="space-y-2">
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="radio"
+                          name="actionType"
+                          value="append"
+                          checked={promptModalAction === 'append'}
+                          onChange={() => setPromptModalAction('append')}
+                          className="w-4 h-4 text-blue-600"
+                        />
+                        <span className="text-sm text-slate-700">➕ Append to section</span>
+                      </label>
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="radio"
+                          name="actionType"
+                          value="prepend"
+                          checked={promptModalAction === 'prepend'}
+                          onChange={() => setPromptModalAction('prepend')}
+                          className="w-4 h-4 text-blue-600"
+                        />
+                        <span className="text-sm text-slate-700">⬆️ Prepend to section</span>
+                      </label>
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="radio"
+                          name="actionType"
+                          value="inform"
+                          checked={promptModalAction === 'inform'}
+                          onChange={() => setPromptModalAction('inform')}
+                          className="w-4 h-4 text-blue-600"
+                        />
+                        <span className="text-sm text-slate-700">💡 Inform context</span>
+                      </label>
+                    </div>
+                  </div>
+                  
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-2">
+                      Custom Instructions (Optional)
+                    </label>
+                    <textarea
+                      rows={4}
+                      placeholder="Add any specific instructions for how this summarizer should be used in this section..."
+                      className="w-full p-3 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    />
+                  </div>
+                </div>
+                
+                <div className="flex justify-end gap-3">
+                  <button
+                    onClick={() => setPromptEditModal(null)}
+                    className="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-lg text-sm font-medium transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={() => {
+                      const modalElement = document.querySelector('.fixed.inset-0.bg-black\\/50');
+                      const actionType = promptModalAction || 'append';
+                      const instructions = modalElement?.querySelector('textarea')?.value || '';
+                      const summarizer = doctorSummarizers.find(s => s.id === promptEditModal.summarizerId);
+                      
+                      if (summarizer) {
+                        const newSummarizer = {
+                          id: `${promptEditModal.summarizerId}-${promptEditModal.sectionKey}-${Date.now()}`,
+                          type: 'summarizer',
+                          name: summarizer.name,
+                          bgColor: actionType === 'append' ? '#dbeafe' : actionType === 'prepend' ? '#dcfce7' : '#fef3c7',
+                          color: actionType === 'append' ? '#1e40af' : actionType === 'prepend' ? '#166534' : '#92400e',
+                          action: actionType,
+                          instructions: instructions
+                        };
+                        
+                        setSectionSummarizers(prev => ({
+                          ...prev,
+                          [promptEditModal.sectionKey]: [...(prev[promptEditModal.sectionKey] || []), newSummarizer]
+                        }));
+                      }
+                      
+                      setPromptEditModal(null);
+                    }}
+                    className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition-colors"
+                  >
+                    Assign Summarizer
+                  </button>
                   </div>
               </div>
             </div>
@@ -2518,9 +3002,9 @@ The summary should transform unstructured text input into a well-organized, clin
                   className="bg-gradient-to-br from-blue-50 to-indigo-50 border-2 border-blue-200 hover:border-blue-500 hover:bg-blue-100 rounded-xl p-6 cursor-pointer transition-all duration-200 shadow-sm hover:shadow-md"
                 >
                   <div className="text-4xl mb-3">📊</div>
-                  <h3 className="text-lg font-bold text-slate-800 mb-2">Create Summarizer</h3>
+                  <h3 className="text-lg font-bold text-slate-800 mb-2">Add Summarizer</h3>
                   <p className="text-sm text-gray-600">
-                    Create a new summarizer to extract and summarize data from EHR
+                    Add a new summarizer to extract and summarize data from EHR
                   </p>
                 </div>
               </div>
@@ -2528,6 +3012,7 @@ The summary should transform unstructured text input into a well-organized, clin
           </div>
         )}
       </div>
+      </>
     );
   }
 
@@ -2551,7 +3036,6 @@ The summary should transform unstructured text input into a well-organized, clin
             <button
               onClick={() => {
                 setCurrentView('summarizers-variables');
-                setViewAllMode('combined');
               }}
               className="bg-white/20 border border-white/30 text-white px-5 py-2.5 rounded-xl text-sm font-semibold hover:bg-white/30 transition-all duration-200 flex items-center gap-2"
             >
@@ -2625,7 +3109,8 @@ The summary should transform unstructured text input into a well-organized, clin
                 { id: 'general', name: 'General Template' },
                 { id: 'followup', name: 'Follow-up' },
                 { id: 'neurology', name: 'Neurology' },
-                { id: 'initial', name: 'Initial Consultation' }
+                { id: 'initial', name: 'Initial Consultation' },
+                { id: 'patient-recap', name: 'Patient Recap' }
               ].map(tab => (
                 <div
                   key={tab.id}
@@ -2645,7 +3130,32 @@ The summary should transform unstructured text input into a well-organized, clin
             <div>
               {currentTab === 'general' && (
                 <div>
+                  <div className="flex justify-between items-center mb-6">
+                    <h2 className="text-xl font-semibold text-slate-800">Template Sections</h2>
+                    <button
+                      onClick={() => {
+                        setNewSectionData({
+                          level: 'parent',
+                          parentKey: '',
+                          childKey: '',
+                          name: '',
+                          key: ''
+                        });
+                        setShowCreateSectionModal(true);
+                      }}
+                      className="bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white px-4 py-2 rounded-lg text-sm font-medium shadow-md hover:shadow-lg transition-all duration-200 flex items-center gap-2"
+                    >
+                      <Plus className="w-4 h-4" />
+                      Create New Section
+                    </button>
+                  </div>
+                  
                   {Object.entries(templateHierarchy).map(([sectionKey, section]) => 
+                    renderParentSection(sectionKey, section)
+                  )}
+                  
+                  {/* Render custom sections */}
+                  {Object.entries(customSections).map(([sectionKey, section]) => 
                     renderParentSection(sectionKey, section)
                   )}
 
@@ -2677,6 +3187,112 @@ The summary should transform unstructured text input into a well-organized, clin
                 <div className="text-center py-20 text-slate-500">
                   <h3 className="text-xl font-semibold mb-2">Initial Consultation</h3>
                   <p>Configure summarizers for initial consultations</p>
+                </div>
+              )}
+
+              {currentTab === 'patient-recap' && (
+                <div>
+                  <div className="mb-6">
+                    <h2 className="text-xl font-semibold text-slate-800 mb-2">Patient Recap Configuration</h2>
+                    <p className="text-sm text-slate-600 mb-6">
+                      Select which summarizers should feed into the Patient Recap template. Patient Recap is a special template that compiles information from selected summarizers for patient overview.
+                    </p>
+            </div>
+
+                  {/* Patient Recap Summarizer Selection */}
+                  <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-200/50 mb-6">
+                    <h3 className="text-lg font-semibold text-slate-800 mb-4">Available Summarizers</h3>
+                    {createdSummarizers.filter(s => s.doctorId === selectedDoctor?.id).length > 0 ? (
+                      <div className="space-y-3">
+                        {createdSummarizers
+                          .filter(s => s.doctorId === selectedDoctor?.id)
+                          .map(summarizer => {
+                            const isSelected = (sectionSummarizers['patient-recap'] || []).some(
+                              s => s.id && s.id.startsWith(summarizer.id)
+                            );
+                            return (
+                              <label
+                                key={summarizer.id}
+                                className="flex items-center gap-3 p-4 border-2 rounded-xl cursor-pointer transition-all hover:bg-slate-50"
+                                style={{
+                                  borderColor: isSelected ? '#3b82f6' : '#e2e8f0',
+                                  backgroundColor: isSelected ? '#eff6ff' : 'white'
+                                }}
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={isSelected}
+                                  onChange={(e) => {
+                                    if (e.target.checked) {
+                                      const newSummarizer = {
+                                        id: `${summarizer.id}-patient-recap-${Date.now()}`,
+                                        type: 'summarizer',
+                                        name: summarizer.name,
+                                        bgColor: '#dbeafe',
+                                        color: '#1e40af',
+                                        action: 'append'
+                                      };
+                                      setSectionSummarizers(prev => ({
+                                        ...prev,
+                                        'patient-recap': [...(prev['patient-recap'] || []), newSummarizer]
+                                      }));
+                                    } else {
+                                      setSectionSummarizers(prev => ({
+                                        ...prev,
+                                        'patient-recap': (prev['patient-recap'] || []).filter(
+                                          s => !s.id || !s.id.startsWith(summarizer.id)
+                                        )
+                                      }));
+                                    }
+                                  }}
+                                  className="w-5 h-5 text-blue-600 rounded focus:ring-blue-500"
+                                />
+                                <div className="flex-1">
+                                  <div className="font-semibold text-slate-800">{summarizer.name}</div>
+                                  <div className="text-xs text-slate-600 mt-0.5">{summarizer.purpose}</div>
+                                </div>
+                                <span className={`text-xs px-2 py-1 rounded-full font-medium ${
+                                  summarizer.active !== false
+                                    ? 'bg-green-100 text-green-700'
+                                    : 'bg-slate-100 text-slate-600'
+                                }`}>
+                                  {summarizer.active !== false ? 'Active' : 'Inactive'}
+                                </span>
+                              </label>
+                            );
+                          })}
+                      </div>
+                    ) : (
+                      <div className="text-center py-8 text-slate-500">
+                        <p className="text-sm">No summarizers available. Create summarizers first to configure Patient Recap.</p>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Selected Summarizers Display */}
+                  {(sectionSummarizers['patient-recap'] || []).length > 0 && (
+                    <div className="bg-gradient-to-r from-purple-50 to-pink-50 rounded-2xl p-6 border-2 border-purple-200/50">
+                      <h3 className="text-lg font-semibold text-slate-800 mb-4">Selected for Patient Recap</h3>
+                      <div className="flex flex-wrap gap-3">
+                        {(sectionSummarizers['patient-recap'] || []).map((sum, index) => (
+                          <div
+                            key={index}
+                            className="px-4 py-2 bg-white border-2 border-purple-300 rounded-lg shadow-sm"
+                          >
+                            <span className="font-medium text-slate-800">📊 {sum.name}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Save Configuration Button */}
+                  <button
+                    onClick={() => alert('Patient Recap configuration saved!')}
+                    className="mt-6 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white px-6 py-3 rounded-xl text-sm font-semibold shadow-lg hover:shadow-xl transition-all duration-200"
+                  >
+                    Save Patient Recap Configuration
+                  </button>
                 </div>
               )}
             </div>
@@ -2783,6 +3399,236 @@ The summary should transform unstructured text input into a well-organized, clin
           </div>
         )}
 
+        {/* Create New Section Modal */}
+        {showCreateSectionModal && (
+          <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => setShowCreateSectionModal(false)}>
+            <div className="bg-white rounded-2xl p-8 max-w-2xl w-full shadow-2xl" onClick={(e) => e.stopPropagation()}>
+              <div className="flex justify-between items-center mb-6">
+                <h2 className="text-2xl font-bold text-slate-800">Create New Section</h2>
+                <button
+                  onClick={() => setShowCreateSectionModal(false)}
+                  className="text-gray-400 hover:text-gray-600 text-3xl w-8 h-8 flex items-center justify-center transition-colors"
+                >
+                  ×
+                </button>
+              </div>
+              
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-2">Section Level *</label>
+                  <select
+                    value={newSectionData.level}
+                    onChange={(e) => setNewSectionData({
+                      ...newSectionData,
+                      level: e.target.value,
+                      parentKey: '',
+                      childKey: ''
+                    })}
+                    className="w-full p-3 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  >
+                    <option value="parent">Parent Section (Top Level)</option>
+                    <option value="child">Child Section (Under Parent)</option>
+                    <option value="grandchild">Grandchild Section (Under Child)</option>
+                  </select>
+                </div>
+                
+                {newSectionData.level === 'child' && (
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-2">Parent Section *</label>
+                    <select
+                      value={newSectionData.parentKey}
+                      onChange={(e) => setNewSectionData({...newSectionData, parentKey: e.target.value})}
+                      className="w-full p-3 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    >
+                      <option value="">Select a parent section...</option>
+                      {Object.entries({...templateHierarchy, ...customSections}).map(([key, section]) => (
+                        <option key={key} value={key}>{section.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+                
+                {newSectionData.level === 'grandchild' && (
+                  <>
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 mb-2">Parent Section *</label>
+                      <select
+                        value={newSectionData.parentKey}
+                        onChange={(e) => {
+                          setNewSectionData({
+                            ...newSectionData,
+                            parentKey: e.target.value,
+                            childKey: ''
+                          });
+                        }}
+                        className="w-full p-3 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      >
+                        <option value="">Select a parent section...</option>
+                        {Object.entries({...templateHierarchy, ...customSections}).map(([key, section]) => (
+                          <option key={key} value={key}>{section.name}</option>
+                        ))}
+                      </select>
+                    </div>
+                    {newSectionData.parentKey && (
+                      <div>
+                        <label className="block text-sm font-medium text-slate-700 mb-2">Child Section *</label>
+                        <select
+                          value={newSectionData.childKey}
+                          onChange={(e) => setNewSectionData({...newSectionData, childKey: e.target.value})}
+                          className="w-full p-3 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        >
+                          <option value="">Select a child section...</option>
+                          {(() => {
+                            const merged = {...templateHierarchy, ...customSections};
+                            const parent = merged[newSectionData.parentKey];
+                            if (parent && parent.children) {
+                              return Object.entries(parent.children).map(([key, child]) => (
+                                <option key={key} value={key}>{child.name}</option>
+                              ));
+                            }
+                            return null;
+                          })()}
+                        </select>
+                      </div>
+                    )}
+                  </>
+                )}
+                
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-2">Section Name *</label>
+                  <input
+                    type="text"
+                    value={newSectionData.name}
+                    onChange={(e) => setNewSectionData({...newSectionData, name: e.target.value})}
+                    placeholder="e.g., Review of Systems, Past Medical History"
+                    className="w-full p-3 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  />
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-2">Section Key (Optional - Auto-generated if empty)</label>
+                  <input
+                    type="text"
+                    value={newSectionData.key}
+                    onChange={(e) => setNewSectionData({...newSectionData, key: e.target.value})}
+                    placeholder="e.g., ros, pmh (lowercase, no spaces)"
+                    className="w-full p-3 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 font-mono text-sm"
+                  />
+                  <p className="text-xs text-slate-500 mt-1">Used internally. Leave empty to auto-generate from name.</p>
+                </div>
+              </div>
+              
+              <div className="flex justify-end gap-3 mt-6">
+                <button
+                  onClick={() => setShowCreateSectionModal(false)}
+                  className="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-lg text-sm font-medium transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => {
+                    if (!newSectionData.name) {
+                      alert('Please enter a section name');
+                      return;
+                    }
+                    if (newSectionData.level === 'child' && !newSectionData.parentKey) {
+                      alert('Please select a parent section');
+                      return;
+                    }
+                    if (newSectionData.level === 'grandchild' && (!newSectionData.parentKey || !newSectionData.childKey)) {
+                      alert('Please select both parent and child sections');
+                      return;
+                    }
+                    
+                    const sectionKey = newSectionData.key || newSectionData.name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
+                    const newSection = {
+                      name: newSectionData.name,
+                      children: newSectionData.level === 'parent' ? {} : undefined
+                    };
+                    
+                    if (newSectionData.level === 'parent') {
+                      setCustomSections(prev => ({...prev, [sectionKey]: newSection}));
+                    } else if (newSectionData.level === 'child') {
+                      const merged = {...templateHierarchy, ...customSections};
+                      const parent = merged[newSectionData.parentKey];
+                      if (parent) {
+                        if (newSectionData.parentKey in customSections) {
+                          setCustomSections(prev => ({
+                            ...prev,
+                            [newSectionData.parentKey]: {
+                              ...prev[newSectionData.parentKey],
+                              children: {...(prev[newSectionData.parentKey].children || {}), [sectionKey]: newSection}
+                            }
+                          }));
+                        } else {
+                          setCustomSections(prev => ({
+                            ...prev,
+                            [newSectionData.parentKey]: {
+                              ...templateHierarchy[newSectionData.parentKey],
+                              children: {...(templateHierarchy[newSectionData.parentKey].children || {}), [sectionKey]: newSection}
+                            }
+                          }));
+                        }
+                      }
+                    } else if (newSectionData.level === 'grandchild') {
+                      const merged = {...templateHierarchy, ...customSections};
+                      const parent = merged[newSectionData.parentKey];
+                      if (parent && parent.children) {
+                        const child = parent.children[newSectionData.childKey];
+                        if (child) {
+                          if (newSectionData.parentKey in customSections) {
+                            setCustomSections(prev => ({
+                              ...prev,
+                              [newSectionData.parentKey]: {
+                                ...prev[newSectionData.parentKey],
+                                children: {
+                                  ...prev[newSectionData.parentKey].children,
+                                  [newSectionData.childKey]: {
+                                    ...prev[newSectionData.parentKey].children[newSectionData.childKey],
+                                    children: {
+                                      ...(prev[newSectionData.parentKey].children[newSectionData.childKey].children || {}),
+                                      [sectionKey]: newSection
+                                    }
+                                  }
+                                }
+                              }
+                            }));
+                          } else {
+                            setCustomSections(prev => ({
+                              ...prev,
+                              [newSectionData.parentKey]: {
+                                ...templateHierarchy[newSectionData.parentKey],
+                                children: {
+                                  ...templateHierarchy[newSectionData.parentKey].children,
+                                  [newSectionData.childKey]: {
+                                    ...templateHierarchy[newSectionData.parentKey].children[newSectionData.childKey],
+                                    children: {
+                                      ...(templateHierarchy[newSectionData.parentKey].children[newSectionData.childKey].children || {}),
+                                      [sectionKey]: newSection
+                                    }
+                                  }
+                                }
+                              }
+                            }));
+                          }
+                        }
+                      }
+                    }
+                    
+                    setSectionSummarizers(prev => ({...prev, [sectionKey]: []}));
+                    setShowCreateSectionModal(false);
+                    setNewSectionData({level: 'parent', parentKey: '', childKey: '', name: '', key: ''});
+                    alert('Section created successfully!');
+                  }}
+                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition-colors"
+                >
+                  Create Section
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Background Prompt Modal */}
         {showBgModal && (
           <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
@@ -2881,14 +3727,15 @@ The summary should transform unstructured text input into a well-organized, clin
   }
 
   // COMBINED VIEW - Now integrated into View All page
-  // Removed standalone view - use summarizers-variables view with viewAllMode='combined'
+  // Only combined view is available (list view removed)
   if (false && currentView === 'combined') {
-    const templates = ['general', 'followup', 'neurology', 'initial'];
+    const templates = ['general', 'followup', 'neurology', 'initial', 'patient-recap'];
     const templateNames = {
       general: 'General Template',
       followup: 'Follow-up',
       neurology: 'Neurology',
-      initial: 'Initial Consultation'
+      initial: 'Initial Consultation',
+      'patient-recap': 'Patient Recap'
     };
 
     // Helper function to get all sections in hierarchical order
@@ -3064,6 +3911,26 @@ The summary should transform unstructured text input into a well-organized, clin
                     </tr>
                   </thead>
                   <tbody>
+                    {/* Patient Recap template - special row */}
+                    {templates.includes('patient-recap') && (
+                      <tr className="border-b border-slate-200 hover:bg-slate-50/50 transition-colors bg-gradient-to-r from-purple-50 to-pink-50">
+                        <td className="pl-6 py-3 text-slate-900 font-bold text-base border-r-2 border-slate-200">
+                          Patient Recap
+                        </td>
+                        {templates.map(template => (
+                          <td
+                            key={`patient-recap-${template}`}
+                            className="px-4 py-3 border-r border-slate-200"
+                          >
+                            {template === 'patient-recap' 
+                              ? renderCellContent('patient-recap', template) 
+                              : <span className="text-gray-400">—</span>}
+                          </td>
+                        ))}
+                      </tr>
+                    )}
+                    
+                    {/* Regular template sections */}
                     {allSections.map((section) => {
                       let bgColor = 'bg-white';
                       let textColor = 'text-slate-900';
@@ -3101,7 +3968,9 @@ The summary should transform unstructured text input into a well-organized, clin
                               key={`${section.key}-${template}`}
                               className="px-4 py-3 border-r border-slate-200"
                             >
-                              {renderCellContent(section.key, template)}
+                              {template === 'patient-recap' 
+                                ? <span className="text-gray-400">—</span> 
+                                : renderCellContent(section.key, template)}
                             </td>
                           ))}
                         </tr>
@@ -3161,7 +4030,7 @@ The summary should transform unstructured text input into a well-organized, clin
       const updated = { ...formDataState };
 
       if (formDataState.useSeparatePrompts) {
-        // Separate prompts mode - populate only enabled input types
+        // Separate prompts mode - populate only enabled file types
         if (formDataState.pullFromEHR && !formDataState.ehrPrompt) {
           updated.ehrPrompt = defaultPrompt;
         }
@@ -3200,7 +4069,13 @@ The summary should transform unstructured text input into a well-organized, clin
           sortingDirection: '',
           documentTypes: '',
           fileType: '',
-          documentCount: 5
+          documentCount: 5,
+          howFarBackYears: 0,
+          howFarBackMonths: 0,
+          howFarBackDays: 0,
+          howFarBackToDays: null,
+          toRecent: false,
+          retrievalMethod: 'latest'
         }));
         return;
       }
@@ -3209,8 +4084,8 @@ The summary should transform unstructured text input into a well-organized, clin
       let next = {
         ...formData,
         selectedResource: resourceId,
-        dateFrom: '',
-        dateTo: '',
+        dateFrom: '', // Legacy - kept for backward compatibility
+        dateTo: '', // Legacy - kept for backward compatibility
         singleDate: '',
         organizationIds: '',
         templateIds: '',
@@ -3219,21 +4094,28 @@ The summary should transform unstructured text input into a well-organized, clin
         sortingDirection: '',
         documentTypes: '',
         fileType: '',
-        documentCount: 5
+        documentCount: 5,
+        howFarBackYears: 0,
+        howFarBackMonths: 0,
+        howFarBackDays: 0,
+        howFarBackToDays: null,
+        toRecent: false,
+        retrievalMethod: 'latest'
       };
 
-      // Set defaults for editable filters (date and count)
+      // Set defaults for editable filters (howFarBack, retrievalMethod, and count)
       if (resource.filters && resource.filters.editable) {
       resource.filters.editable.forEach((filter) => {
-        if (filter.type === 'dateRange' && filter.default) {
-          const from = filter.default.from
-            ? computeRelativeDate(filter.default.from)
-            : '';
-          const to = filter.default.to
-            ? computeRelativeDate(filter.default.to)
-            : '';
-          next.dateFrom = from;
-          next.dateTo = to;
+        if (filter.type === 'howFarBack' && filter.default) {
+          next.howFarBackYears = filter.default.yearsBack || 0;
+          next.howFarBackMonths = filter.default.monthsBack || 0;
+          next.howFarBackDays = filter.default.daysBack || 0;
+          next.howFarBackToDays = filter.default.daysBackTo !== undefined ? filter.default.daysBackTo : null;
+          next.toRecent = filter.default.toRecent || false;
+        }
+
+        if (filter.type === 'retrievalMethod' && filter.default) {
+          next.retrievalMethod = filter.default;
         }
 
         if (filter.type === 'count') {
@@ -3299,7 +4181,7 @@ The summary should transform unstructured text input into a well-organized, clin
         
         if (defaultPrompt) {
           if (next.useSeparatePrompts) {
-            // If separate prompts mode, populate all enabled input types
+            // If separate prompts mode, populate all enabled file types
             if (next.pullFromEHR) {
               next.ehrPrompt = defaultPrompt;
             }
@@ -3323,11 +4205,11 @@ The summary should transform unstructured text input into a well-organized, clin
       setFormData(updatedWithPrompts);
     };
 
-    // Handle input type changes - auto-populate prompts if resource is selected
+    // Handle file type changes - auto-populate prompts if resource is selected
     const handleInputTypeChange = (field, value) => {
       const updated = { ...formData, [field]: value };
       
-      // If resource is selected, auto-populate prompts for newly enabled input types
+      // If resource is selected, auto-populate prompts for newly enabled file types
       if (formData.selectedResource) {
         const ehr = selectedDoctor?.ehr;
         const resources = getResourcesForEhr(ehr);
@@ -3370,24 +4252,20 @@ The summary should transform unstructured text input into a well-organized, clin
       
       // Validate name
       if (!formData.name.trim()) {
-        alert('Please enter a summarizer name');
+        alert('Please enter a file type');
         return;
       }
       
-      // Validate that at least one input type is selected
+      // Validate that at least one file type is selected
       if (!formData.pullFromEHR && !formData.allowUpload && !formData.allowText) {
-        alert('Please select at least one input type (Pull from EHR, Upload, or Paste Text)');
+        alert('Please select at least one file type (Pull from EHR, Upload, or Paste Text)');
         return;
       }
 
       // Validate resource selection if Pull from EHR is enabled
       if (formData.pullFromEHR) {
-        if (formData.resourceType === 'existing' && !formData.selectedResource) {
-          alert('Please select an existing resource or request a new one');
-          return;
-        }
-        if (formData.resourceType === 'new' && !formData.newResourceDesc.trim()) {
-          alert('Please describe the new resource you need');
+        if (!formData.selectedResource) {
+          alert('Please select a resource');
           return;
         }
       }
@@ -3437,9 +4315,7 @@ The summary should transform unstructured text input into a well-organized, clin
           s.id === editingSummarizerId ? updatedSummarizer : s
         ));
         
-        const statusMessage = formData.pullFromEHR && formData.resourceType === 'new'
-          ? 'Summarizer updated successfully!\n\n⚠️ New resource request pending tech team review.\nSummarizer will be operational once resource is created.'
-          : 'Summarizer updated successfully!\n\n✓ Configuration saved\n✓ Ready for immediate use';
+        const statusMessage = 'Summarizer updated successfully!\n\n✓ Configuration saved\n✓ Ready for immediate use';
         
         alert(statusMessage);
         setEditingSummarizerId(null);
@@ -3456,9 +4332,7 @@ The summary should transform unstructured text input into a well-organized, clin
         
         setCreatedSummarizers(prev => [...prev, newSummarizer]);
         
-        const statusMessage = formData.pullFromEHR && formData.resourceType === 'new'
-          ? 'Summarizer created successfully!\n\n⚠️ New resource request submitted.\nTech team will be notified to create the resource.\nSummarizer will be operational once resource is ready.'
-          : 'Summarizer created successfully!\n\n✓ Summarizer entry created in database\n✓ Configuration saved\n✓ Ready for immediate use';
+        const statusMessage = 'Summarizer created successfully!\n\n✓ Summarizer entry created in database\n✓ Configuration saved\n✓ Ready for immediate use';
         
         alert(statusMessage);
       }
@@ -3494,6 +4368,21 @@ The summary should transform unstructured text input into a well-organized, clin
           </div>
 
           <form onSubmit={handleFormSubmit} className="space-y-8">
+            {/* Prominent Copy Button */}
+            <div className="mb-6">
+              <button
+                type="button"
+                onClick={() => setShowCopySummarizerModal(true)}
+                className="w-full px-6 py-4 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-xl font-semibold flex items-center justify-center gap-3 shadow-lg hover:shadow-xl transition-all duration-200 text-base"
+              >
+                <Copy className="w-5 h-5" />
+                Copy from Existing Summarizers
+              </button>
+              <p className="text-sm text-slate-600 text-center mt-2">
+                Start by copying an existing summarizer configuration
+              </p>
+            </div>
+            
             {/* Section 1: Basic Information */}
             <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-200/50">
               <h2 className="text-xl font-semibold text-slate-800 mb-6 flex items-center gap-2">
@@ -3506,7 +4395,7 @@ The summary should transform unstructured text input into a well-organized, clin
                   <label className="block text-sm font-medium text-slate-700 mb-2">Doctor's Email</label>
                   <input
                     type="email"
-                    value={selectedDoctor?.email}
+                    value={maskEmail(selectedDoctor?.email)}
                     disabled
                     className="w-full p-3 border border-slate-200 rounded-xl bg-slate-50 text-slate-600"
                   />
@@ -3524,12 +4413,12 @@ The summary should transform unstructured text input into a well-organized, clin
               
               <div className="space-y-4">
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-2">Name *</label>
+                  <label className="block text-sm font-medium text-slate-700 mb-2">File Type *</label>
                   <input
                     type="text"
                     value={formData.name}
                     onChange={(e) => setFormData({...formData, name: e.target.value})}
-                    placeholder="e.g., Neurology Visit Summary"
+                    placeholder="What file type is the doctor going to upload? e.g., Referring provider note"
                     className="w-full p-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
                     required
                   />
@@ -3541,7 +4430,7 @@ The summary should transform unstructured text input into a well-organized, clin
                   <textarea
                     value={formData.purpose}
                     onChange={(e) => setFormData({...formData, purpose: e.target.value})}
-                    placeholder="Describe why you're creating this summarizer and what it will be used for..."
+                    placeholder="Describe what the summarizer will achieve for the doctor..."
                     rows={4}
                     className="w-full p-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
                   />
@@ -3549,17 +4438,17 @@ The summary should transform unstructured text input into a well-organized, clin
               </div>
             </div>
 
-            {/* Section 2: Functionality Settings */}
+            {/* Section 2: File Sources */}
             <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-200/50">
               <h2 className="text-xl font-semibold text-slate-800 mb-6 flex items-center gap-2">
                 <div className="w-6 h-6 bg-blue-100 rounded-lg flex items-center justify-center text-blue-600 text-sm font-bold">2</div>
-                Functionality Settings
+                File Sources
               </h2>
               
               <div className="space-y-6">
                 {/* Checkboxes for input types */}
                 <div className="space-y-3">
-                  <p className="text-sm font-medium text-slate-700 mb-3">Select input types (you can select multiple):</p>
+                  <p className="text-sm font-medium text-slate-700 mb-3">Select file types (you can select multiple):</p>
                   
                 {/* Pull from EHR */}
                 <div className="border border-slate-200 rounded-xl p-4">
@@ -3616,7 +4505,7 @@ The summary should transform unstructured text input into a well-organized, clin
                     <div className="mb-4">
                       <div className="flex items-center justify-between mb-3">
                         <div className="flex items-center gap-2">
-                          <h3 className="text-sm font-semibold text-slate-700">Default Prompts Configuration</h3>
+                          <h3 className="text-sm font-semibold text-slate-700">Summarization</h3>
                           {promptsEdited && (
                             <span className="text-xs text-blue-600 bg-blue-100 px-2 py-0.5 rounded-full font-medium">
                               [Edited]
@@ -3636,7 +4525,7 @@ The summary should transform unstructured text input into a well-organized, clin
                         </button>
                       </div>
                       <p className="text-xs text-slate-500 mb-4">
-                        Define the default prompts for this summarizer. These prompts will be used when processing data.
+                        Summarization prompt for all file types
                       </p>
                       <label className="flex items-center gap-3 cursor-pointer">
                         <input
@@ -3646,8 +4535,8 @@ The summary should transform unstructured text input into a well-organized, clin
                           className="w-5 h-5 text-blue-600 rounded focus:ring-blue-500"
                         />
                         <div>
-                          <span className="font-medium text-slate-800">Use separate prompts for each input type</span>
-                          <p className="text-sm text-slate-600">By default, one prompt is used for all input types</p>
+                          <span className="font-medium text-slate-800">Use separate prompts for each file type</span>
+                          <p className="text-sm text-slate-600">By default, one prompt is used for all file types</p>
                         </div>
                       </label>
                     </div>
@@ -3657,7 +4546,7 @@ The summary should transform unstructured text input into a well-organized, clin
                       <div className="mt-4">
                         <div className="flex items-center justify-between mb-2">
                           <label className="block text-sm font-medium text-slate-700">
-                          Default Summarization Prompt (for all input types) *
+                          Summarization prompt for all file types *
                         </label>
                           <button
                             type="button"
@@ -3674,13 +4563,13 @@ The summary should transform unstructured text input into a well-organized, clin
                             setFormData({...formData, commonPrompt: e.target.value});
                             setPromptsEdited(true);
                           }}
-                          placeholder="Enter the default prompt for processing all input types..."
+                          placeholder="Enter the summarization prompt for all file types..."
                           rows={4}
                           className="w-full p-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
                           required
                         />
                         <p className="text-xs text-slate-500 mt-1">
-                          This is the default prompt for this summarizer. It will be used for all selected input types.
+                          This is the summarization prompt for this summarizer. It will be used for all selected file types.
                         </p>
                       </div>
                     )}
@@ -3790,18 +4679,18 @@ The summary should transform unstructured text input into a well-organized, clin
 
                 {!(formData.pullFromEHR || formData.allowUpload || formData.allowText) && (
                   <p className="text-sm text-slate-500 italic text-center py-4">
-                    Select at least one input type to configure prompts
+                    Select at least one file type to configure prompts
                   </p>
                 )}
               </div>
             </div>
 
-            {/* Section 3: Data Source Configuration (conditional) */}
+            {/* Section 3: EHR Pull Configuration (conditional) */}
             {formData.pullFromEHR && (
               <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-200/50">
                 <h2 className="text-xl font-semibold text-slate-800 mb-6 flex items-center gap-2">
                   <div className="w-6 h-6 bg-blue-100 rounded-lg flex items-center justify-center text-blue-600 text-sm font-bold">3</div>
-                  Data Source Configuration
+                  EHR Pull Configuration
                 </h2>
                 
                 <div className="space-y-6">
@@ -3810,47 +4699,6 @@ The summary should transform unstructured text input into a well-organized, clin
                     <label className="block text-sm font-medium text-slate-700 mb-3">
                       Resource Selection *
                     </label>
-                    <div className="space-y-3 mb-4">
-                      <label className="flex items-center gap-3 cursor-pointer">
-                        <input
-                          type="radio"
-                          name="resourceType"
-                          value="existing"
-                          checked={formData.resourceType === 'existing'}
-                          onChange={(e) => {
-                            setFormData({
-                              ...formData,
-                              resourceType: 'existing',
-                              selectedResource: '',
-                              newResourceDesc: ''
-                            });
-                          }}
-                          className="w-4 h-4 text-blue-600 focus:ring-blue-500"
-                        />
-                        <span className="text-sm text-slate-700">Select existing resource</span>
-                      </label>
-                      <label className="flex items-center gap-3 cursor-pointer">
-                        <input
-                          type="radio"
-                          name="resourceType"
-                          value="new"
-                          checked={formData.resourceType === 'new'}
-                          onChange={(e) => {
-                            setFormData({
-                              ...formData,
-                              resourceType: 'new',
-                              selectedResource: '',
-                              newResourceDesc: ''
-                            });
-                          }}
-                          className="w-4 h-4 text-blue-600 focus:ring-blue-500"
-                        />
-                        <span className="text-sm text-slate-700">Request new resource</span>
-                      </label>
-                    </div>
-
-                    {/* Existing Resource Dropdown */}
-                    {formData.resourceType === 'existing' && (
                       <div>
                     <p className="text-xs text-slate-500 mb-2">
                       Select a resource. Options show resource name with available filters. Only date and number of documents are editable; other filters appear in Advanced Settings.
@@ -3877,31 +4725,10 @@ The summary should transform unstructured text input into a well-organized, clin
                           ) : null;
                         })()}
                       </div>
-                    )}
-
-                    {/* New Resource Request */}
-                    {formData.resourceType === 'new' && (
-                      <div>
-                        <p className="text-xs text-slate-500 mb-2">
-                          Describe the resource you need. Tech team will review and create it.
-                        </p>
-                        <textarea
-                          value={formData.newResourceDesc}
-                          onChange={(e) => setFormData({...formData, newResourceDesc: e.target.value})}
-                          placeholder="Describe the document type needed, use case, and any special requirements..."
-                          rows={4}
-                          className="w-full p-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
-                          required
-                        />
-                        <p className="mt-2 text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded-lg p-3">
-                          <strong>Note:</strong> Summarizer will be created with a placeholder resource. Tech team will be notified to develop the new resource. Once complete, the summarizer will become fully operational.
-                        </p>
-                      </div>
-                          )}
                         </div>
 
                   {/* Dynamic filter rendering based on selected resource & EHR */}
-                  {formData.resourceType === 'existing' && formData.selectedResource ? (
+                  {formData.selectedResource ? (
                     (() => {
                       const ehr = selectedDoctor?.ehr;
                       const resources = getResourcesForEhr(ehr);
@@ -3928,7 +4755,7 @@ The summary should transform unstructured text input into a well-organized, clin
                               </span>
                     </div>
                             <p className="text-xs text-slate-500">
-                              Only date range and number of documents are editable. File type is auto-set based on the selected resource. Other filters are shown in Advanced Settings for transparency.
+                              Only "how far back" parameters and number of documents are editable. File type is auto-set based on the selected resource. Other filters are shown in Advanced Settings for transparency.
                             </p>
                             {resource.fileFormat && (
                               <p className="text-xs text-slate-600 mt-2 font-medium">
@@ -3977,45 +4804,195 @@ The summary should transform unstructured text input into a well-organized, clin
 
                                 // fileType is auto-set based on resource.fileFormat, not user-selectable
 
-                                if (filter.type === 'dateRange') {
+                                if (filter.type === 'howFarBack') {
                                   return (
                                     <div key={filter.id}>
                                       <label className="block text-sm font-medium text-slate-700 mb-2">
-                                        {filter.label} {filter.editable ? '*' : ''}
+                                        {filter.label} {filter.required ? '*' : ''}
                                       </label>
-                                      <div className="grid grid-cols-2 gap-2">
+                                      <div className="space-y-3">
+                                        <div className="grid grid-cols-3 gap-2">
+                                          <div>
+                                            <label className="block text-xs text-slate-600 mb-1">Years Back</label>
                         <input
-                                type="date"
-                                value={formData.dateFrom}
+                                              type="number"
+                                              min="0"
+                                              value={formData.howFarBackYears}
+                                              onChange={(e) => {
+                                                const years = Number(e.target.value) || 0;
+                                                setFormData({
+                                                  ...formData,
+                                                  howFarBackYears: years,
+                                                  dateFrom: convertHowFarBackToDateRange({
+                                                    yearsBack: years,
+                                                    monthsBack: formData.howFarBackMonths,
+                                                    daysBack: formData.howFarBackDays,
+                                                    daysBackTo: formData.howFarBackToDays,
+                                                    toRecent: formData.toRecent
+                                                  }).dateFrom
+                                                });
+                                              }}
+                                              className="w-full p-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
+                                            />
+                                          </div>
+                                          <div>
+                                            <label className="block text-xs text-slate-600 mb-1">Months Back</label>
+                                            <input
+                                              type="number"
+                                              min="0"
+                                              value={formData.howFarBackMonths}
+                                              onChange={(e) => {
+                                                const months = Number(e.target.value) || 0;
+                                                setFormData({
+                                                  ...formData,
+                                                  howFarBackMonths: months,
+                                                  dateFrom: convertHowFarBackToDateRange({
+                                                    yearsBack: formData.howFarBackYears,
+                                                    monthsBack: months,
+                                                    daysBack: formData.howFarBackDays,
+                                                    daysBackTo: formData.howFarBackToDays,
+                                                    toRecent: formData.toRecent
+                                                  }).dateFrom
+                                                });
+                                              }}
+                                              className="w-full p-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
+                                            />
+                                          </div>
+                                          <div>
+                                            <label className="block text-xs text-slate-600 mb-1">Days Back</label>
+                                            <input
+                                              type="number"
+                                              min="0"
+                                              value={formData.howFarBackDays}
+                                              onChange={(e) => {
+                                                const days = Number(e.target.value) || 0;
+                                                setFormData({
+                                                  ...formData,
+                                                  howFarBackDays: days,
+                                                  dateFrom: convertHowFarBackToDateRange({
+                                                    yearsBack: formData.howFarBackYears,
+                                                    monthsBack: formData.howFarBackMonths,
+                                                    daysBack: days,
+                                                    daysBackTo: formData.howFarBackToDays,
+                                                    toRecent: formData.toRecent
+                                                  }).dateFrom
+                                                });
+                                              }}
+                                              className="w-full p-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
+                                            />
+                                          </div>
+                                        </div>
+                                        {filter.default && filter.default.daysBackTo !== undefined && (
+                                          <div>
+                                            <label className="block text-xs text-slate-600 mb-1">To (Days Ago)</label>
+                                            <input
+                                              type="number"
+                                              min="0"
+                                              value={formData.howFarBackToDays || ''}
+                                              onChange={(e) => {
+                                                const daysTo = e.target.value ? Number(e.target.value) : null;
+                                                setFormData({
+                                                  ...formData,
+                                                  howFarBackToDays: daysTo,
+                                                  dateTo: convertHowFarBackToDateRange({
+                                                    yearsBack: formData.howFarBackYears,
+                                                    monthsBack: formData.howFarBackMonths,
+                                                    daysBack: formData.howFarBackDays,
+                                                    daysBackTo: daysTo,
+                                                    toRecent: formData.toRecent
+                                                  }).dateTo
+                                                });
+                                              }}
+                                              className="w-full p-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
+                                              placeholder="e.g., 3"
+                                            />
+                                          </div>
+                                        )}
+                                        {filter.default && filter.default.toRecent && (
+                                          <div className="flex items-center gap-2">
+                                            <input
+                                              type="checkbox"
+                                              checked={formData.toRecent}
+                                              onChange={(e) => {
+                                                setFormData({
+                                                  ...formData,
+                                                  toRecent: e.target.checked,
+                                                  dateTo: convertHowFarBackToDateRange({
+                                                    yearsBack: formData.howFarBackYears,
+                                                    monthsBack: formData.howFarBackMonths,
+                                                    daysBack: formData.howFarBackDays,
+                                                    daysBackTo: formData.howFarBackToDays,
+                                                    toRecent: e.target.checked
+                                                  }).dateTo
+                                                });
+                                              }}
+                                              className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
+                                            />
+                                            <label className="text-sm text-slate-700">To recent note date</label>
+                                          </div>
+                                        )}
+                                      </div>
+                                      <p className="mt-2 text-xs text-slate-500">
+                                        {filter.default && filter.default.yearsBack 
+                                          ? `Default: ${filter.default.yearsBack} year${filter.default.yearsBack > 1 ? 's' : ''} back${filter.default.daysBackTo !== undefined ? `, to ${filter.default.daysBackTo} days ago` : ''}${filter.default.toRecent ? ', to recent note date' : ''}`
+                                          : 'Specify how far back to retrieve historical data.'}
+                                      </p>
+                                    </div>
+                                  );
+                                }
+
+                                if (filter.type === 'retrievalMethod') {
+                                  return (
+                                    <div key={filter.id}>
+                                      <label className="block text-sm font-medium text-slate-700 mb-2">
+                                        {filter.label} {filter.required ? '*' : ''}
+                                      </label>
+                                      <div className="space-y-2">
+                                        {filter.options && filter.options.map((option) => (
+                                          <label key={option} className="flex items-center gap-2 cursor-pointer">
+                                            <input
+                                              type="radio"
+                                              name={`retrievalMethod-${filter.id}`}
+                                              value={option}
+                                              checked={formData.retrievalMethod === option}
                                           onChange={(e) =>
                                             setFormData({
                                               ...formData,
-                                              dateFrom: e.target.value
-                                            })
-                                          }
-                                          disabled={!filter.editable}
-                                          className="p-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors disabled:bg-slate-50 disabled:text-slate-500"
-                              />
+                                                  retrievalMethod: e.target.value
+                                                })
+                                              }
+                                              className="w-4 h-4 text-blue-600 focus:ring-blue-500"
+                                            />
+                                            <span className="text-sm text-slate-700">
+                                              {option === 'latest' ? 'Latest note only' : option === 'all' ? 'All notes in period' : option === 'count' ? 'Specific count of notes' : option}
+                                            </span>
+                                          </label>
+                                        ))}
+                                        {formData.retrievalMethod === 'count' && (
+                                          <div className="ml-6 mt-2">
                               <input
-                                type="date"
-                                value={formData.dateTo}
+                                              type="number"
+                                              min="1"
+                                              value={formData.documentCount}
                                           onChange={(e) =>
                                             setFormData({
                                               ...formData,
-                                              dateTo: e.target.value
+                                                  documentCount: Number(e.target.value)
                                             })
                                           }
-                                          disabled={!filter.editable}
-                                          className="p-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors disabled:bg-slate-50 disabled:text-slate-500"
+                                              className="w-full p-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
+                                              placeholder="Number of documents"
                               />
                         </div>
-                                      <p className="mt-1 text-xs text-slate-500">
-                                        Prefilled using EHR defaults (for example, ECW 3 years → 3
-                                        days). You can override the dates if needed.
+                                        )}
+                                      </div>
+                                      <p className="mt-2 text-xs text-slate-500">
+                                        Select how to retrieve documents: latest note only, all notes in period, or specific count of notes.
                                       </p>
                         </div>
                                   );
                                 }
+
 
                                 if (filter.type === 'singleDate') {
                                   return (
@@ -4460,42 +5437,6 @@ The summary should transform unstructured text input into a well-organized, clin
                             <div className="mb-4">
                               <h3 className="text-base font-semibold text-slate-800 mb-1">Pipeline Settings</h3>
                               <p className="text-xs text-slate-500">Configure pipeline behavior and dependencies</p>
-                            </div>
-                            
-                            {/* create_intermediate */}
-                            <div>
-                              <label className="flex items-center gap-3 cursor-pointer">
-                                <input
-                                  type="checkbox"
-                                  checked={formData.create_intermediate}
-                                  disabled={!advancedSettingsUnlocked}
-                                  onClick={() => {
-                                    if (!advancedSettingsUnlocked) {
-                                      setShowAdvancedSettingsPopup(true);
-                                    }
-                                  }}
-                                  onChange={(e) => {
-                                    if (advancedSettingsUnlocked) {
-                                      setFormData({
-                                        ...formData,
-                                        create_intermediate: e.target.checked
-                                      });
-                                      setAdvancedSettingsEdited(true);
-                                    }
-                                  }}
-                                  className={`w-5 h-5 text-blue-600 rounded focus:ring-blue-500 transition-opacity ${
-                                    advancedSettingsUnlocked
-                                      ? 'cursor-pointer'
-                                      : 'cursor-pointer opacity-60'
-                                  }`}
-                                />
-                                <div>
-                                  <span className={`font-medium ${advancedSettingsUnlocked ? 'text-slate-800' : 'text-slate-600'}`}>
-                                    Create Intermediate
-                                  </span>
-                                  <p className="text-xs text-slate-500 mt-0.5">Enable intermediate resource creation</p>
-                        </div>
-                      </label>
                     </div>
 
                             {/* depends_on_summarisers */}
@@ -4547,18 +5488,18 @@ The summary should transform unstructured text input into a well-organized, clin
                   </div>
             )}
 
-            {/* Section 4: Add Variables (always available) */}
+            {/* Section 4: Extract Variables (always available) */}
             <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-200/50">
               <h2 className="text-xl font-semibold text-slate-800 mb-6 flex items-center gap-2">
                 <div className="w-6 h-6 bg-blue-100 rounded-lg flex items-center justify-center text-blue-600 text-sm font-bold">4</div>
-                Add Variables
+                Extract Variables
               </h2>
               
               <p className="text-sm text-slate-600 mb-6">
                 Define variables to extract from the selected data source. Variables can be used to extract specific data points from EHR resources, uploaded files, or text input.
               </p>
               
-              {formData.pullFromEHR && formData.resourceType === 'existing' && formData.selectedResource && (() => {
+              {formData.pullFromEHR && formData.selectedResource && (() => {
                 const ehr = selectedDoctor?.ehr;
                 const resources = getResourcesForEhr(ehr);
                 const resource = resources.find((r) => r.id === formData.selectedResource);
@@ -4598,7 +5539,7 @@ The summary should transform unstructured text input into a well-organized, clin
               {!formData.pullFromEHR && !formData.allowUpload && !formData.allowText && (
                 <div className="mb-6 p-4 bg-amber-50 border border-amber-200 rounded-lg">
                   <p className="text-sm text-amber-800">
-                    Select at least one input type above to add variables.
+                    Select at least one file type above to extract variables.
                   </p>
                 </div>
               )}
@@ -4613,14 +5554,28 @@ The summary should transform unstructured text input into a well-organized, clin
                             <div className="flex items-center gap-2 mb-2">
                               <span className="font-semibold text-slate-800">{variable.name}</span>
                               <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">
-                                {variable.extractionMethod === 'pickSection' ? 'Import Section' : 'LLM Query'}
+                                {variable.extractionMethod === 'xmlTraversal' 
+                                  ? 'XML/HTML Traversal' 
+                                  : variable.extractionMethod === 'regex'
+                                  ? 'Regex'
+                                  : variable.extractionMethod === 'llmSearch'
+                                  ? 'LLM Query'
+                                  : variable.extractionMethod === 'pickSection'
+                                  ? 'Import Section'
+                                  : 'Unknown'}
                               </span>
                             </div>
-                            {variable.extractionMethod === 'pickSection' && variable.selectedSection && (
-                              <p className="text-sm text-slate-600">Section: {variable.selectedSection}</p>
+                            {variable.extractionMethod === 'xmlTraversal' && variable.nodePath && (
+                              <p className="text-sm text-slate-600">Node Path: {variable.nodePath}</p>
+                            )}
+                            {variable.extractionMethod === 'regex' && variable.regexPattern && (
+                              <p className="text-sm text-slate-600">Regex: {variable.regexPattern}</p>
                             )}
                             {variable.extractionMethod === 'llmSearch' && variable.llmQuery && (
                               <p className="text-sm text-slate-600">Query: {variable.llmQuery}</p>
+                            )}
+                            {variable.extractionMethod === 'pickSection' && variable.selectedSection && (
+                              <p className="text-sm text-slate-600">Section: {variable.selectedSection}</p>
                             )}
                           </div>
                           <div className="flex items-center gap-1">
@@ -4660,13 +5615,13 @@ The summary should transform unstructured text input into a well-organized, clin
                     type="button"
                     onClick={() => {
                       setEditingVariableIndex(null);
-                      setNewVariable({ name: '', extractionMethod: '', selectedSection: '', llmQuery: '' });
+                      setNewVariable({ name: '', extractionMethod: '', selectedSection: '', nodePath: '', regexPattern: '', llmQuery: '' });
                       setShowAddVariableForm(true);
                     }}
                     className="w-full px-4 py-3 border-2 border-dashed border-slate-300 rounded-xl text-slate-600 hover:border-blue-500 hover:text-blue-600 hover:bg-blue-50 transition-colors flex items-center justify-center gap-2"
                   >
                     <Plus className="w-5 h-5" />
-                    Add Variable
+                    Add variable to extract
                   </button>
                 ) : (
                   <div className="border border-slate-200 rounded-xl p-4 bg-slate-50 space-y-4">
@@ -4679,7 +5634,7 @@ The summary should transform unstructured text input into a well-organized, clin
                         onClick={() => {
                           setShowAddVariableForm(false);
                           setEditingVariableIndex(null);
-                          setNewVariable({ name: '', extractionMethod: '', selectedSection: '', llmQuery: '' });
+                          setNewVariable({ name: '', extractionMethod: '', selectedSection: '', nodePath: '', regexPattern: '', llmQuery: '' });
                         }}
                         className="text-slate-400 hover:text-slate-600"
                       >
@@ -4704,14 +5659,28 @@ The summary should transform unstructured text input into a well-organized, clin
                           <input
                             type="radio"
                             name="extractionMethod"
-                            value="pickSection"
-                            checked={newVariable.extractionMethod === 'pickSection'}
-                            onChange={(e) => setNewVariable({...newVariable, extractionMethod: e.target.value, llmQuery: ''})}
+                            value="xmlTraversal"
+                            checked={newVariable.extractionMethod === 'xmlTraversal'}
+                            onChange={(e) => setNewVariable({...newVariable, extractionMethod: e.target.value, selectedSection: '', regexPattern: '', llmQuery: ''})}
                             className="w-4 h-4 text-blue-600 mt-0.5"
                           />
                           <div className="flex-1">
-                            <div className="font-medium text-slate-800">Import section as is</div>
-                            <p className="text-xs text-slate-600">Pick a direct section from the resource</p>
+                            <div className="font-medium text-slate-800">XML/HTML traversal</div>
+                            <p className="text-xs text-slate-600">Specify node path from root (e.g., /root/patient/age)</p>
+                          </div>
+                        </label>
+                        <label className="flex items-start gap-3 p-3 border-2 border-slate-200 rounded-lg cursor-pointer hover:bg-white transition-colors">
+                          <input
+                            type="radio"
+                            name="extractionMethod"
+                            value="regex"
+                            checked={newVariable.extractionMethod === 'regex'}
+                            onChange={(e) => setNewVariable({...newVariable, extractionMethod: e.target.value, selectedSection: '', nodePath: '', llmQuery: ''})}
+                            className="w-4 h-4 text-blue-600 mt-0.5"
+                          />
+                          <div className="flex-1">
+                            <div className="font-medium text-slate-800">Regex</div>
+                            <p className="text-xs text-slate-600">Pattern matching with syntax examples</p>
                           </div>
                         </label>
                         <label className="flex items-start gap-3 p-3 border-2 border-slate-200 rounded-lg cursor-pointer hover:bg-white transition-colors">
@@ -4720,27 +5689,46 @@ The summary should transform unstructured text input into a well-organized, clin
                             name="extractionMethod"
                             value="llmSearch"
                             checked={newVariable.extractionMethod === 'llmSearch'}
-                            onChange={(e) => setNewVariable({...newVariable, extractionMethod: e.target.value, selectedSection: ''})}
+                            onChange={(e) => setNewVariable({...newVariable, extractionMethod: e.target.value, selectedSection: '', nodePath: '', regexPattern: ''})}
                             className="w-4 h-4 text-blue-600 mt-0.5"
                           />
                           <div className="flex-1">
-                            <div className="font-medium text-slate-800">LLM query to extract data</div>
+                            <div className="font-medium text-slate-800">LLM query</div>
                             <p className="text-xs text-slate-600">Give LLM a command to search and extract data</p>
                           </div>
                         </label>
                       </div>
                     </div>
 
-                    {newVariable.extractionMethod === 'pickSection' && (
+                    {newVariable.extractionMethod === 'xmlTraversal' && (
                       <div>
-                        <label className="block text-sm font-medium text-slate-700 mb-2">Section Name *</label>
+                        <label className="block text-sm font-medium text-slate-700 mb-2">Node Path *</label>
                         <input
                           type="text"
-                          value={newVariable.selectedSection}
-                          onChange={(e) => setNewVariable({...newVariable, selectedSection: e.target.value})}
-                          placeholder="Enter section name to import"
-                          className="w-full p-3 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                          value={newVariable.nodePath}
+                          onChange={(e) => setNewVariable({...newVariable, nodePath: e.target.value})}
+                          placeholder="e.g., /root/patient/age, /document/section[@id='vitals']/temperature"
+                          className="w-full p-3 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 font-mono text-sm"
                         />
+                        <p className="text-xs text-slate-500 mt-1">
+                          Enter the XML/HTML node path from root. Use XPath syntax for complex queries.
+                        </p>
+                      </div>
+                    )}
+
+                    {newVariable.extractionMethod === 'regex' && (
+                      <div>
+                        <label className="block text-sm font-medium text-slate-700 mb-2">Regex Pattern *</label>
+                        <input
+                          type="text"
+                          value={newVariable.regexPattern}
+                          onChange={(e) => setNewVariable({...newVariable, regexPattern: e.target.value})}
+                          placeholder="e.g., Age:\\s*(\\d+), Date:\\s*(\\d{4}-\\d{2}-\\d{2})"
+                          className="w-full p-3 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 font-mono text-sm"
+                        />
+                        <p className="text-xs text-slate-500 mt-1">
+                          Enter a regex pattern. Use capturing groups (parentheses) to extract specific values. Example: <code className="bg-slate-100 px-1 rounded">Age:\\s*(\\d+)</code> extracts age after "Age:"
+                        </p>
                       </div>
                     )}
 
@@ -4768,8 +5756,12 @@ The summary should transform unstructured text input into a well-organized, clin
                             alert('Please fill in variable name and select extraction method');
                             return;
                           }
-                          if (newVariable.extractionMethod === 'pickSection' && !newVariable.selectedSection) {
-                            alert('Please select a section');
+                          if (newVariable.extractionMethod === 'xmlTraversal' && !newVariable.nodePath) {
+                            alert('Please enter a node path');
+                            return;
+                          }
+                          if (newVariable.extractionMethod === 'regex' && !newVariable.regexPattern) {
+                            alert('Please enter a regex pattern');
                             return;
                           }
                           if (newVariable.extractionMethod === 'llmSearch' && !newVariable.llmQuery) {
@@ -4793,7 +5785,7 @@ The summary should transform unstructured text input into a well-organized, clin
                             });
                           }
                           
-                          setNewVariable({ name: '', extractionMethod: '', selectedSection: '', llmQuery: '' });
+                          setNewVariable({ name: '', extractionMethod: '', selectedSection: '', nodePath: '', regexPattern: '', llmQuery: '' });
                           setEditingVariableIndex(null);
                           setShowAddVariableForm(false);
                         }}
@@ -4806,7 +5798,7 @@ The summary should transform unstructured text input into a well-organized, clin
                         onClick={() => {
                           setShowAddVariableForm(false);
                           setEditingVariableIndex(null);
-                          setNewVariable({ name: '', extractionMethod: '', selectedSection: '', llmQuery: '' });
+                          setNewVariable({ name: '', extractionMethod: '', selectedSection: '', nodePath: '', regexPattern: '', llmQuery: '' });
                         }}
                         className="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-lg text-sm font-medium transition-colors"
                       >
@@ -4929,7 +5921,7 @@ The summary should transform unstructured text input into a well-organized, clin
             <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-200/50">
               <h2 className="text-xl font-semibold text-slate-800 mb-6 flex items-center gap-2">
                 <div className="w-6 h-6 bg-blue-100 rounded-lg flex items-center justify-center text-blue-600 text-sm font-bold">
-                  {formData.pullFromEHR && formData.selectedResource && formData.resourceType === 'existing' ? '5' : (formData.pullFromEHR ? '4' : '3')}
+                  {formData.pullFromEHR && formData.selectedResource ? '5' : (formData.pullFromEHR ? '4' : '3')}
                 </div>
                 Model Selection
               </h2>
@@ -5015,7 +6007,7 @@ The summary should transform unstructured text input into a well-organized, clin
             <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-200/50">
               <h2 className="text-xl font-semibold text-slate-800 mb-6 flex items-center gap-2">
                 <div className="w-6 h-6 bg-blue-100 rounded-lg flex items-center justify-center text-blue-600 text-sm font-bold">
-                  {formData.pullFromEHR && formData.selectedResource && formData.resourceType === 'existing' ? '6' : (formData.pullFromEHR ? '5' : '4')}
+                  {formData.pullFromEHR && formData.selectedResource ? '6' : (formData.pullFromEHR ? '5' : '4')}
                 </div>
                 Review Configuration
               </h2>
@@ -5023,7 +6015,7 @@ The summary should transform unstructured text input into a well-organized, clin
               <div className="space-y-4">
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <p className="text-xs font-semibold text-slate-500 uppercase mb-1">Summarizer Name</p>
+                    <p className="text-xs font-semibold text-slate-500 uppercase mb-1">File Type</p>
                     <p className="text-sm text-slate-800">{formData.name || 'Not set'}</p>
                   </div>
                   <div>
@@ -5048,13 +6040,11 @@ The summary should transform unstructured text input into a well-organized, clin
                     <div>
                       <p className="text-xs font-semibold text-slate-500 uppercase mb-1">Resource</p>
                       <p className="text-sm text-slate-800">
-                        {formData.resourceType === 'existing' && formData.selectedResource
+                        {formData.selectedResource
                           ? (() => {
                               const resource = getResourcesForEhr(selectedDoctor?.ehr).find(r => r.id === formData.selectedResource);
                               return resource ? formatResourceOption(resource) : 'Resource not found';
                             })()
-                          : formData.resourceType === 'new'
-                          ? 'New Resource Request'
                           : 'Not selected'}
                       </p>
                     </div>
@@ -5088,216 +6078,344 @@ The summary should transform unstructured text input into a well-organized, clin
                 type="submit"
                 className="px-8 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-xl font-medium transition-all duration-200 shadow-lg hover:shadow-xl"
               >
-                {editingSummarizerId ? 'Update Summarizer' : 'Create Summarizer'}
+                {editingSummarizerId ? 'Update Summarizer' : 'Add Summarizer'}
               </button>
             </div>
           </form>
-        </div>
-      </div>
-    );
-  }
 
-  // MANAGE DOCUMENTS VIEW
-  if (currentView === 'manage-documents') {
-    const ehrNames = getAllEhrNames();
-    
-    // Get document types based on selected EHR filter
-    const getFilteredDocumentTypes = () => {
-      if (selectedEhrFilter === 'All EHRs') {
-        // Show all combinations
-        return getAllEhrDocumentTypeCombinations();
-      } else {
-        // Show only document types for selected EHR
-        const docTypes = getDocumentTypesForEhr(selectedEhrFilter);
-        return docTypes.map(docType => ({ ehr: selectedEhrFilter, documentType: docType }));
-      }
-    };
-
-    const filteredCombinations = getFilteredDocumentTypes();
-
-    const handleStartEdit = (ehr, docType) => {
-      const key = `${ehr}-${docType}`;
-      setEditingDocType(key);
-      setEditPrompt(documentTypePrompts[key] || '');
-    };
-
-    const handleSavePrompt = (ehr, docType) => {
-      const key = `${ehr}-${docType}`;
-      setDocumentTypePrompts(prev => ({
-        ...prev,
-        [key]: editPrompt
-      }));
-      setEditingDocType(null);
-      setEditPrompt('');
-      alert(`Default prompt saved for ${ehr} - ${docType}!`);
-    };
-
-    const handleCancelEdit = () => {
-      setEditingDocType(null);
-      setEditPrompt('');
-    };
-
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50">
-        <div className="max-w-5xl mx-auto px-6 py-8">
-          <div className="mb-8">
-            <button
-              onClick={() => setCurrentView('doctors')}
-              className="flex items-center gap-2 text-slate-600 hover:text-slate-800 mb-4 transition-colors"
-            >
-              <ChevronRight className="w-4 h-4 rotate-180" />
-              Back to Doctors
-            </button>
-            
-            <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-200/50">
-              <div className="flex items-center gap-4 mb-2">
-                <div className="w-12 h-12 bg-gradient-to-r from-slate-600 to-slate-700 rounded-xl flex items-center justify-center">
-                  <Database className="w-6 h-6 text-white" />
-                </div>
-                <div>
-                  <h1 className="text-3xl font-bold text-slate-800">Manage Document Defaults</h1>
-                  <p className="text-slate-600 mt-1">Set default prompts for each (EHR, Document Type) combination. These will auto-populate when creating summarizers.</p>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div className="bg-white rounded-2xl shadow-sm border border-slate-200/50 overflow-hidden">
-            <div className="px-6 py-4 border-b border-slate-200 bg-slate-50/50">
-              <div className="flex items-center justify-between mb-4">
-                <div>
-                  <h2 className="text-lg font-semibold text-slate-800">Document Type Default Prompts</h2>
-                  <p className="text-sm text-slate-600 mt-1">Configure default prompts that will be used when creating summarizers for each (EHR, Document Type) combination.</p>
-                </div>
-                <div className="flex items-center gap-3">
-                  <label className="text-sm font-medium text-slate-700">Filter by EHR:</label>
-                  <select
-                    value={selectedEhrFilter}
-                    onChange={(e) => setSelectedEhrFilter(e.target.value)}
-                    className="px-4 py-2 border border-slate-300 rounded-lg text-sm font-medium text-slate-700 bg-white hover:border-slate-400 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
+          {/* Copy Summarizer Modal - For Create Flow */}
+          {showCopySummarizerModal && (
+            <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => setShowCopySummarizerModal(false)}>
+              <div className="bg-white rounded-2xl p-8 max-w-3xl w-full max-h-[85vh] overflow-y-auto shadow-2xl" onClick={(e) => e.stopPropagation()}>
+                <div className="flex justify-between items-center mb-6">
+                  <h2 className="text-2xl font-bold text-slate-800">
+                    Copy from Existing Summarizers
+                  </h2>
+                  <button
+                    onClick={() => setShowCopySummarizerModal(false)}
+                    className="text-gray-400 hover:text-gray-600 text-3xl w-8 h-8 flex items-center justify-center transition-colors"
                   >
-                    <option value="All EHRs">All EHRs</option>
-                    {ehrNames.map(ehr => (
-                      <option key={ehr} value={ehr}>{ehr}</option>
+                    ×
+                  </button>
+                </div>
+
+                <p className="text-slate-600 mb-6">
+                  Select a doctor first, then choose a summarizer to copy its configuration. The form will be pre-filled with all values from the selected summarizer.
+                </p>
+
+                {/* Doctor Selection - Required */}
+                <div className="mb-6">
+                  <label className="block text-sm font-semibold text-slate-700 mb-2">
+                    Select Doctor * <span className="text-red-500">(Required)</span>
+                  </label>
+                  <select
+                    value={copySourceDoctorForSummarizer?.id || ''}
+                    onChange={(e) => {
+                      const doctorId = e.target.value;
+                      const doctor = doctors.find(d => d.id === parseInt(doctorId));
+                      setCopySourceDoctorForSummarizer(doctor || null);
+                      setSelectedSummarizers([]); // Clear selection when doctor changes
+                    }}
+                    className="w-full p-3 border-2 border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  >
+                    <option value="">Select a doctor...</option>
+                    {doctors.map(doctor => (
+                      <option key={doctor.id} value={doctor.id}>{doctor.name} ({doctor.ehr} EHR)</option>
                     ))}
                   </select>
-                </div>
-              </div>
-            </div>
-
-            <div className="divide-y divide-slate-200">
-              {filteredCombinations.map(({ ehr, documentType }) => {
-                const key = `${ehr}-${documentType}`;
-                const isEditing = editingDocType === key;
-                const currentPrompt = documentTypePrompts[key] || '';
-
-                return (
-                  <div key={key} className="p-6 hover:bg-slate-50/50 transition-colors">
-                    <div className="flex items-start justify-between gap-4">
-                    <div className="flex-1">
-                        <div className="flex items-center gap-3 mb-3">
-                          {selectedEhrFilter === 'All EHRs' ? (
-                            <h3 className="text-lg font-semibold text-slate-800">{ehr} - {documentType}</h3>
-                          ) : (
-                            <h3 className="text-lg font-semibold text-slate-800">{documentType}</h3>
-                          )}
-                          <span className="text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded-full font-medium">
-                            Default Prompt
-                          </span>
-                          {selectedEhrFilter === 'All EHRs' && (
-                            <span className="text-xs bg-slate-100 text-slate-600 px-2 py-1 rounded-full font-medium">
-                              {ehr}
-                            </span>
-                      )}
-                    </div>
-                        
-                        {isEditing ? (
-                          <div className="space-y-3">
-                          <textarea
-                              value={editPrompt}
-                              onChange={(e) => setEditPrompt(e.target.value)}
-                              placeholder={`Enter the default prompt for ${ehr} - ${documentType}...`}
-                              rows={5}
-                              className="w-full p-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
-                            />
-                            <p className="text-xs text-slate-500">
-                              This prompt will auto-populate when creating summarizers for {ehr} {documentType} resources.
-                            </p>
-                            <div className="flex gap-3">
-                              <button
-                                onClick={() => handleSavePrompt(ehr, documentType)}
-                                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition-colors"
-                              >
-                                Save Prompt
-                              </button>
-                              <button
-                                onClick={handleCancelEdit}
-                                className="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-lg text-sm font-medium transition-colors"
-                              >
-                                Cancel
-                              </button>
-                        </div>
-                    </div>
-                        ) : (
-                          <div className="space-y-3">
-                            {currentPrompt ? (
-                              <div className="bg-slate-50 border border-slate-200 rounded-xl p-4">
-                                <p className="text-sm text-slate-700 whitespace-pre-wrap">{currentPrompt}</p>
-                </div>
-                            ) : (
-                              <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
-                                <p className="text-sm text-amber-700 italic">No default prompt set. Click "Edit" to add one.</p>
-              </div>
-            )}
-              <button
-                              onClick={() => handleStartEdit(ehr, documentType)}
-                              className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-sm font-medium transition-colors flex items-center gap-2"
-                            >
-                              <Pencil className="w-4 h-4" />
-                              {currentPrompt ? 'Edit Prompt' : 'Set Prompt'}
-              </button>
-            </div>
+                  {copySourceDoctorForSummarizer && (
+                    <div className="mt-2 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                      <div className="text-sm text-blue-700">
+                        <span className="font-semibold">Selected:</span> {copySourceDoctorForSummarizer.name} ({copySourceDoctorForSummarizer.ehr} EHR)
+                        {copySourceDoctorForSummarizer.ehr !== selectedDoctor?.ehr && (
+                          <span className="ml-2 text-amber-700 font-medium">⚠ Different EHR - Data source config will be empty</span>
                         )}
                       </div>
                     </div>
-                  </div>
-                );
-              })}
-            </div>
+                  )}
+                </div>
 
-            <div className="px-6 py-4 bg-slate-50/50 border-t border-slate-200">
-              <div className="flex items-start gap-3">
-                <Info className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
-                <div className="text-sm text-slate-600">
-                  <p className="font-medium text-slate-800 mb-1">How Default Prompts Work:</p>
-                  <ul className="list-disc list-inside space-y-1 text-slate-600">
-                    <li>Default prompts are set per (EHR, Document Type) combination (e.g., "ECW - Previous Notes", "AthenaOne - Lab Results")</li>
-                    <li>Each EHR can have different default prompts for the same document type</li>
-                    <li>When creating a summarizer and selecting a resource, the default prompt for that EHR and document type will auto-populate</li>
-                    <li>Ops can still edit the prompt after it's auto-filled if needed</li>
-                    <li>Use the filter dropdown to view prompts for a specific EHR or all EHRs</li>
-                  </ul>
+                {/* Summarizer Selection - Only shown after doctor is selected */}
+                {copySourceDoctorForSummarizer && (
+                  <div className="mb-6">
+                    <label className="block text-sm font-semibold text-slate-700 mb-3">
+                      Select Summarizer to Copy * {selectedSummarizers.length > 0 && <span className="text-blue-600">({selectedSummarizers.length} selected)</span>}
+                    </label>
+                    <div className="space-y-2 max-h-96 overflow-y-auto">
+                      {createdSummarizers.filter(s => s.doctorId === copySourceDoctorForSummarizer.id).length > 0 ? (
+                        createdSummarizers
+                          .filter(s => s.doctorId === copySourceDoctorForSummarizer.id)
+                          .map(summarizer => {
+                        const sourceDoctor = doctors.find(d => d.id === summarizer.doctorId);
+                        const isSameEHR = sourceDoctor?.ehr === selectedDoctor?.ehr;
+                        return (
+                      <div
+                        key={summarizer.id}
+                        className={`border-2 rounded-xl p-4 cursor-pointer transition-all ${
+                          selectedSummarizers.includes(summarizer.id)
+                            ? 'border-blue-500 bg-blue-50'
+                            : 'border-slate-200 hover:border-blue-300 hover:bg-blue-50/30'
+                        }`}
+                        onClick={(e) => {
+                          // Only toggle if clicking on the card, not the checkbox
+                          if (e.target.type !== 'checkbox') {
+                            toggleSummarizerSelection(summarizer.id);
+                          }
+                        }}
+                          >
+                            <div className="flex items-start justify-between">
+                          <div className="flex items-start gap-3 flex-1">
+                            <input
+                              type="checkbox"
+                              checked={selectedSummarizers.includes(summarizer.id)}
+                              onChange={() => toggleSummarizerSelection(summarizer.id)}
+                              onClick={(e) => e.stopPropagation()}
+                              className="w-4 h-4 text-blue-600 rounded mt-1 cursor-pointer"
+                            />
+                              <div className="flex-1">
+                                <div className="flex items-center gap-3 mb-2">
+                            <span className="font-semibold text-slate-800">{summarizer.name}</span>
+                                  {isSameEHR ? (
+                                    <span className="text-xs bg-green-100 text-green-700 px-2 py-1 rounded-full">Same EHR</span>
+                                  ) : (
+                                    <span className="text-xs bg-amber-100 text-amber-700 px-2 py-1 rounded-full">Different EHR</span>
+                                  )}
+                          </div>
+                                <div className="text-sm text-slate-600 mb-1">
+                                  <span className="font-medium">From:</span> {sourceDoctor?.name || 'Unknown'} ({sourceDoctor?.ehr || 'Unknown'} EHR)
+                        </div>
+                                {summarizer.purpose && (
+                                  <p className="text-xs text-slate-500 mt-1 line-clamp-2">{summarizer.purpose}</p>
+                                )}
+                                <div className="flex gap-2 mt-2">
+                                  {summarizer.pullFromEHR && <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded">EHR Pull</span>}
+                                  {summarizer.allowUpload && <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded">Upload</span>}
+                                  {summarizer.allowText && <span className="text-xs bg-purple-100 text-purple-700 px-2 py-0.5 rounded">Text</span>}
+                      </div>
+                      </div>
+                  </div>
+        </div>
+      </div>
+    );
+                      })
+                      ) : (
+                        <div className="text-center py-8 text-slate-500">
+                          <p>No summarizers found for {copySourceDoctorForSummarizer.name}. Create one first.</p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {!copySourceDoctorForSummarizer && (
+                  <div className="mb-6 p-4 bg-amber-50 border border-amber-200 rounded-xl">
+                    <div className="flex gap-3">
+                      <AlertCircle className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
+                      <div className="text-sm text-amber-700">
+                        Please select a doctor first to view available summarizers.
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Info Box */}
+                <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
+                  <div className="flex gap-3">
+                    <Info className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
+                    <div className="text-sm text-blue-700">
+                      <strong>What gets copied:</strong> All form fields including prompts, resource selection (if same EHR), filters, advanced settings, and variables. You can modify any values after copying.
+                    </div>
+                  </div>
+                </div>
+
+                {/* Action Buttons */}
+                <div className="flex gap-3 justify-end">
+                  <button
+                    onClick={() => {
+                      setShowCopySummarizerModal(false);
+                      setSelectedSummarizers([]);
+                      setCopySourceDoctorForSummarizer(null);
+                    }}
+                    className="px-6 py-2.5 border-2 border-slate-300 text-slate-700 rounded-xl font-semibold hover:bg-slate-50 transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={() => {
+                      if (!copySourceDoctorForSummarizer) {
+                        alert('Please select a doctor first');
+                        return;
+                      }
+                      
+                      if (selectedSummarizers.length === 0) {
+                        alert('Please select at least one summarizer to copy');
+                        return;
+                      }
+                      
+                      // If only one selected, copy it directly to form
+                      if (selectedSummarizers.length === 1) {
+                        const summarizerId = selectedSummarizers[0];
+                        const summarizer = createdSummarizers.find(s => s.id === summarizerId);
+                        if (summarizer) {
+                          const sourceDoctor = doctors.find(d => d.id === summarizer.doctorId);
+                          const isSameEHR = sourceDoctor?.ehr === selectedDoctor?.ehr;
+                          
+                          setFormData({
+                            name: summarizer.name,
+                            purpose: summarizer.purpose,
+                            pullFromEHR: summarizer.pullFromEHR,
+                            allowUpload: summarizer.allowUpload,
+                            allowText: summarizer.allowText,
+                            useSeparatePrompts: summarizer.useSeparatePrompts,
+                            commonPrompt: summarizer.commonPrompt || '',
+                            // If EHR doesn't match, keep data source config empty
+                            selectedResource: isSameEHR ? (summarizer.selectedResource || '') : '',
+                            dataSelection: isSameEHR ? (summarizer.dataSelection || 'count') : 'count',
+                            documentCount: isSameEHR ? (summarizer.documentCount || 5) : 5,
+                            dateFrom: isSameEHR ? (summarizer.dateFrom || '') : '',
+                            dateTo: isSameEHR ? (summarizer.dateTo || '') : '',
+                            singleDate: isSameEHR ? (summarizer.singleDate || '') : '',
+                            organizationIds: isSameEHR ? (summarizer.organizationIds || '') : '',
+                            templateIds: isSameEHR ? (summarizer.templateIds || '') : '',
+                            keywords: isSameEHR ? (summarizer.keywords || '') : '',
+                            visitTypes: isSameEHR ? (summarizer.visitTypes || '') : '',
+                            sortingDirection: isSameEHR ? (summarizer.sortingDirection || '') : '',
+                            documentTypes: isSameEHR ? (summarizer.documentTypes || '') : '',
+                            fileType: isSameEHR ? (summarizer.fileType || '') : '',
+                            ehrPrompt: summarizer.ehrPrompt || '',
+                            uploadPrompt: summarizer.uploadPrompt || '',
+                            textPrompt: summarizer.textPrompt || '',
+                            primaryModel: summarizer.primaryModel || '',
+                            fallbackModel: summarizer.fallbackModel || '',
+                            avg_summarization_time: summarizer.avg_summarization_time || 60,
+                            create_intermediate: summarizer.create_intermediate !== undefined ? summarizer.create_intermediate : true,
+                            depends_on_summarisers: summarizer.depends_on_summarisers || [],
+                            active: true,
+                            variables: summarizer.variables || [],
+                            howFarBackYears: isSameEHR ? (summarizer.howFarBackYears || 0) : 0,
+                            howFarBackMonths: isSameEHR ? (summarizer.howFarBackMonths || 0) : 0,
+                            howFarBackDays: isSameEHR ? (summarizer.howFarBackDays || 0) : 0,
+                            howFarBackToDays: isSameEHR ? (summarizer.howFarBackToDays || null) : null,
+                            toRecent: isSameEHR ? (summarizer.toRecent || false) : false,
+                            retrievalMethod: isSameEHR ? (summarizer.retrievalMethod || 'latest') : 'latest'
+                          });
+                          
+                          setShowCopySummarizerModal(false);
+                          setSelectedSummarizers([]);
+                          setCopySourceDoctorForSummarizer(null);
+                          
+                          if (!isSameEHR) {
+                            alert('Summarizer copied! Note: EHR resource configuration (data source config section) was not copied because the source doctor uses a different EHR system. Please configure the data source section for this EHR.');
+                          } else {
+                            alert('Summarizer configuration copied successfully! Please review and adjust as needed.');
+                          }
+                        }
+                      } else {
+                        // Multiple selected - show message (for now, only single copy is supported in create flow)
+                        alert(`You selected ${selectedSummarizers.length} summarizers. Currently, only one summarizer can be copied at a time in the create flow. Please select only one summarizer.`);
+                      }
+                    }}
+                    disabled={!copySourceDoctorForSummarizer || selectedSummarizers.length === 0}
+                    className={`px-6 py-2.5 rounded-xl font-semibold shadow-lg transition-all duration-200 ${
+                      !copySourceDoctorForSummarizer || selectedSummarizers.length === 0
+                        ? 'bg-slate-300 text-slate-500 cursor-not-allowed'
+                        : 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white hover:shadow-xl'
+                    }`}
+                  >
+                    Copy {selectedSummarizers.length > 0 ? `${selectedSummarizers.length} ` : ''}Summarizer{selectedSummarizers.length > 1 ? 's' : ''}
+                  </button>
                 </div>
               </div>
             </div>
-          </div>
+          )}
         </div>
       </div>
     );
   }
 
+  // BULK TRANSFER VIEW
+  if (currentView === 'bulk-transfer') {
+    // Handler for executing copy operations
+    const handleExecuteCopy = async (copyData) => {
+      const { sourceDoctors, targetDoctors, targetEmails, copyType, selectedSummarizers, resourceMappings } = copyData;
+      
+      // Process target emails to find or create doctor entries
+      const targetEmailList = targetEmails || [];
+      const allTargetIds = [...targetDoctors];
+      
+      // For emails not matching existing doctors, we'd create new entries in a real implementation
+      // For now, we'll just use existing doctors
+      
+      let totalCopied = 0;
+      
+      // Get source summarizers based on copy type
+      let summarizersToCopy = [];
+      if (copyType === 'summarizers') {
+        summarizersToCopy = createdSummarizers.filter(s => 
+          selectedSummarizers.includes(s.id) && sourceDoctors.includes(s.doctorId)
+        );
+      } else if (copyType === 'full') {
+        summarizersToCopy = createdSummarizers.filter(s => sourceDoctors.includes(s.doctorId));
+      }
+      // For 'templates', we'd copy template configurations (not implemented in this demo)
+      
+      // Copy to each target doctor
+      allTargetIds.forEach(targetDoctorId => {
+        const targetDoctor = doctors.find(d => d.id === targetDoctorId);
+        if (!targetDoctor) return;
+        
+        const sourceDoctor = doctors.find(d => sourceDoctors.includes(d.id));
+        if (!sourceDoctor) return;
+        
+        const isSameEHR = targetDoctor.ehr === sourceDoctor.ehr;
+        
+        summarizersToCopy.forEach(sourceSummarizer => {
+          // Check if resource mapping exists for this combination
+          const mappingKey = `${sourceSummarizer.id}-${targetDoctorId}`;
+          const mapping = resourceMappings[mappingKey];
+          
+          const newSummarizer = {
+            ...sourceSummarizer,
+            id: `summarizer-${Date.now()}-${Math.random()}`,
+            doctorId: targetDoctorId,
+            doctorName: targetDoctor.name,
+            ehr: targetDoctor.ehr,
+            selectedResource: isSameEHR 
+              ? sourceSummarizer.selectedResource 
+              : (mapping?.targetResource || ''),
+            active: true
+          };
+          
+          setCreatedSummarizers(prev => [...prev, newSummarizer]);
+          totalCopied++;
+        });
+      });
+      
+      return { success: true, copied: totalCopied };
+    };
+    
+    return (
+      <BulkTransferPage
+        doctors={doctors}
+        createdSummarizers={createdSummarizers}
+        onBack={() => setCurrentView('doctors')}
+        onExecuteCopy={handleExecuteCopy}
+        maskEmail={maskEmail}
+      />
+    );
+  }
 
   // Default fallback
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50 p-8">
       <button
-        onClick={handleCancelCreate}
+        onClick={() => setCurrentView('doctors')}
         className="mb-4 text-blue-600 hover:text-blue-800"
       >
         ← Back to Doctors
       </button>
-      <h1 className="text-2xl font-bold">Create</h1>
-      <p>For {selectedDoctor?.name}</p>
+      <h1 className="text-2xl font-bold">Unknown View</h1>
+      <p>View not found: {currentView}</p>
     </div>
   );
 };

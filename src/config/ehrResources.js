@@ -12,10 +12,14 @@ export const EHR_RESOURCES = {
       filters: {
         editable: [
           {
-            id: 'dateRange',
-            type: 'dateRange',
-            label: 'Date Range',
-            required: true
+            id: 'howFarBack',
+            type: 'howFarBack',
+            label: 'How Far Back',
+            required: true,
+            default: {
+              yearsBack: 3,
+              daysBackTo: 3
+            }
           },
           {
             id: 'count',
@@ -58,16 +62,18 @@ export const EHR_RESOURCES = {
       filters: {
         editable: [
           {
-            id: 'dateRange',
-            type: 'dateRange',
-            label: 'Date Range',
-            required: true
+            id: 'retrievalMethod',
+            type: 'retrievalMethod',
+            label: 'Retrieval Method',
+            required: true,
+            options: ['latest', 'all', 'count'],
+            default: 'latest'
           },
           {
             id: 'count',
             type: 'count',
             label: 'Number of Notes',
-            required: true
+            required: false
           }
         ],
         advanced: []
@@ -82,16 +88,18 @@ export const EHR_RESOURCES = {
       filters: {
         editable: [
           {
-            id: 'dateRange',
-            type: 'dateRange',
-            label: 'Date Range',
-            required: true
+            id: 'retrievalMethod',
+            type: 'retrievalMethod',
+            label: 'Retrieval Method',
+            required: true,
+            options: ['latest', 'all', 'count'],
+            default: 'latest'
           },
           {
             id: 'count',
             type: 'count',
             label: 'Number of Documents',
-            required: true
+            required: false
           }
         ],
         advanced: []
@@ -107,10 +115,12 @@ export const EHR_RESOURCES = {
       filters: {
         editable: [
           {
-            id: 'dateRange',
-            type: 'dateRange',
-            label: 'Date Range',
-            required: true
+            id: 'retrievalMethod',
+            type: 'retrievalMethod',
+            label: 'Retrieval Method',
+            required: true,
+            options: ['latest', 'all', 'count'],
+            default: 'latest'
           },
           {
             id: 'count',
@@ -142,10 +152,12 @@ export const EHR_RESOURCES = {
       filters: {
         editable: [
           {
-            id: 'dateRange',
-            type: 'dateRange',
-            label: 'Date Range',
-            required: true
+            id: 'retrievalMethod',
+            type: 'retrievalMethod',
+            label: 'Retrieval Method',
+            required: true,
+            options: ['latest', 'all', 'count'],
+            default: 'latest'
           },
           {
             id: 'count',
@@ -177,10 +189,12 @@ export const EHR_RESOURCES = {
       filters: {
         editable: [
           {
-            id: 'dateRange',
-            type: 'dateRange',
-            label: 'Date Range',
-            required: true
+            id: 'retrievalMethod',
+            type: 'retrievalMethod',
+            label: 'Retrieval Method',
+            required: true,
+            options: ['latest', 'all', 'count'],
+            default: 'latest'
           },
           {
             id: 'count',
@@ -211,10 +225,12 @@ export const EHR_RESOURCES = {
       filters: {
         editable: [
           {
-            id: 'dateRange',
-            type: 'dateRange',
-            label: 'Date Range',
-            required: true
+            id: 'retrievalMethod',
+            type: 'retrievalMethod',
+            label: 'Retrieval Method',
+            required: true,
+            options: ['latest', 'all', 'count'],
+            default: 'latest'
           },
           {
             id: 'count',
@@ -227,6 +243,32 @@ export const EHR_RESOURCES = {
         advanced: []
       },
       source: 'Imaging Results'
+    },
+    {
+      id: 'athenaone-problems-list',
+      resourceLabel: 'Problems List',
+      documentType: 'Problems List',
+      fileFormat: null,
+      filters: {
+        editable: [
+          {
+            id: 'retrievalMethod',
+            type: 'retrievalMethod',
+            label: 'Retrieval Method',
+            required: true,
+            options: ['latest', 'all', 'count'],
+            default: 'latest'
+          },
+          {
+            id: 'count',
+            type: 'count',
+            label: 'Number of Documents',
+            required: false
+          }
+        ],
+        advanced: []
+      },
+      source: 'Problems List'
     }
   ],
   AthenaFlow: [
@@ -238,10 +280,14 @@ export const EHR_RESOURCES = {
       filters: {
         editable: [
           {
-            id: 'dateRange',
-            type: 'dateRange',
-            label: 'Date Range',
-            required: true
+            id: 'howFarBack',
+            type: 'howFarBack',
+            label: 'How Far Back',
+            required: true,
+            default: {
+              yearsBack: 1,
+              toRecent: true
+            }
           },
           {
             id: 'count',
@@ -278,10 +324,18 @@ export const EHR_RESOURCES = {
       filters: {
         editable: [
           {
+            id: 'retrievalMethod',
+            type: 'retrievalMethod',
+            label: 'Retrieval Method',
+            required: true,
+            options: ['latest', 'all', 'count'],
+            default: 'latest'
+          },
+          {
             id: 'count',
             type: 'count',
             label: 'Number of Notes',
-            required: true
+            required: false
           }
         ],
         advanced: [
@@ -309,10 +363,12 @@ export const EHR_RESOURCES = {
       filters: {
         editable: [
           {
-            id: 'dateRange',
-            type: 'dateRange',
-            label: 'Date Range',
-            required: true
+            id: 'retrievalMethod',
+            type: 'retrievalMethod',
+            label: 'Retrieval Method',
+            required: true,
+            options: ['latest', 'all', 'count'],
+            default: 'latest'
           },
           {
             id: 'count',
@@ -352,16 +408,18 @@ export const EHR_RESOURCES = {
       filters: {
         editable: [
           {
-            id: 'dateRange',
-            type: 'dateRange',
-            label: 'Date Range',
-            required: true
+            id: 'retrievalMethod',
+            type: 'retrievalMethod',
+            label: 'Retrieval Method',
+            required: true,
+            options: ['latest', 'all', 'count'],
+            default: 'latest'
           },
           {
             id: 'count',
             type: 'count',
             label: 'Number of Notes',
-            required: true
+            required: false
           }
         ],
         advanced: []
@@ -376,10 +434,12 @@ export const EHR_RESOURCES = {
       filters: {
         editable: [
           {
-            id: 'dateRange',
-            type: 'dateRange',
-            label: 'Date Range',
-            required: true
+            id: 'retrievalMethod',
+            type: 'retrievalMethod',
+            label: 'Retrieval Method',
+            required: true,
+            options: ['latest', 'all', 'count'],
+            default: 'latest'
           },
           {
             id: 'count',
@@ -412,16 +472,18 @@ export const EHR_RESOURCES = {
       filters: {
         editable: [
           {
-            id: 'dateRange',
-            type: 'dateRange',
-            label: 'Date Range',
-            required: true
+            id: 'retrievalMethod',
+            type: 'retrievalMethod',
+            label: 'Retrieval Method',
+            required: true,
+            options: ['latest', 'all', 'count'],
+            default: 'latest'
           },
           {
             id: 'count',
             type: 'count',
             label: 'Number of Notes',
-            required: true
+            required: false
           }
         ],
         advanced: []
