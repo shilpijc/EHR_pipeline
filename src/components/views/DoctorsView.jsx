@@ -111,7 +111,7 @@ const DoctorsView = ({
                         className="px-3 py-1.5 text-sm text-purple-600 hover:text-purple-700 hover:bg-purple-50 rounded-lg font-medium flex items-center gap-1.5 transition-all duration-200"
                       >
                         <FileText className="w-4 h-4" />
-                        View All
+                        Configure
                       </button>
 
                       <div className="relative create-dropdown-container">

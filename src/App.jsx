@@ -51,7 +51,7 @@ const SummarizerPrototype = () => {
   const [configMode, setConfigMode] = useState('summarizers'); // 'summarizers' | 'variables'
   const [openDropdown, setOpenDropdown] = useState(null);
   const [createTypeDropdown, setCreateTypeDropdown] = useState(null); // doctor.id for which create dropdown is open
-  const [viewAllCreateDropdown, setViewAllCreateDropdown] = useState(null); // 'summarizers' | null for View All page
+  const [viewAllCreateDropdown, setViewAllCreateDropdown] = useState(null); // 'summarizers' | null for Configure page
   const [summarizerPickerDropdown, setSummarizerPickerDropdown] = useState(null); // sectionId for which picker is open
   const [cellSummarizerDropdown, setCellSummarizerDropdown] = useState(null); // `${sectionKey}-${template}` for which cell dropdown is open
   const [promptEditModal, setPromptEditModal] = useState(null); // { sectionKey, template, summarizerId, summarizerName } for prompt editing modal
@@ -1028,7 +1028,7 @@ const SummarizerPrototype = () => {
   // Close dropdowns when clicking outside
   useEffect(() => {
     const handleClickOutside = (event) => {
-      // Close View All dropdowns
+      // Close Configure page dropdowns
       setCellSummarizerDropdown(null);
       if (viewAllCreateDropdown && !event.target.closest('.view-all-dropdown-container')) {
         setViewAllCreateDropdown(null);
@@ -1748,7 +1748,7 @@ const SummarizerPrototype = () => {
                         className="px-3 py-1.5 text-sm text-purple-600 hover:text-purple-700 hover:bg-purple-50 rounded-lg font-medium flex items-center gap-1.5 transition-all duration-200"
                       >
                         <FileText className="w-4 h-4" />
-                        View All
+                        Configure
                       </button>
 
                       <div className="relative create-dropdown-container">
@@ -3032,7 +3032,7 @@ const SummarizerPrototype = () => {
               className="bg-white/20 border border-white/30 text-white px-5 py-2.5 rounded-xl text-sm font-semibold hover:bg-white/30 transition-all duration-200 flex items-center gap-2"
             >
               <TableIcon className="w-4 h-4" />
-              View All
+              Configure
             </button>
           </div>
 
@@ -3718,7 +3718,7 @@ const SummarizerPrototype = () => {
     );
   }
 
-  // COMBINED VIEW - Now integrated into View All page
+  // COMBINED VIEW - Now integrated into Configure page
   // Only combined view is available (list view removed)
   if (false && currentView === 'combined') {
     const templates = ['general', 'followup', 'neurology', 'initial', 'patient-recap'];
