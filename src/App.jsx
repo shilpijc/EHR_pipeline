@@ -31,7 +31,6 @@ import {
 import BulkTransferPage from './components/BulkTransferPage';
 import DoctorsView from './components/views/DoctorsView';
 import SummarizersVariablesView from './components/views/SummarizersVariablesView';
-import BatchCopyEditView from './components/views/BatchCopyEditView';
 import CopyDoctorModal from './components/modals/CopyDoctorModal';
 
 // Import hooks (available for future use)
@@ -4114,8 +4113,20 @@ const SummarizerPrototype = () => {
   }
 
 
-  // CREATE SUMMARIZER VIEW
-  if (currentView === 'create' && createType === 'summarizer') {
+  // CREATE SUMMARIZER VIEW (with optional batch edit mode)
+  const isInBatchMode = currentView === 'batch-copy-edit' && batchCopySummarizers.length > 0;
+  const currentBatchSummarizer = isInBatchMode
+    ? batchCopySummarizers.find(s => s.id === selectedBatchSummarizer)
+    : null;
+
+  // Sync formData with current batch summarizer when selection changes
+  React.useEffect(() => {
+    if (isInBatchMode && currentBatchSummarizer) {
+      setFormData(currentBatchSummarizer);
+    }
+  }, [selectedBatchSummarizer, isInBatchMode]);
+
+  if ((currentView === 'create' && createType === 'summarizer') || currentView === 'batch-copy-edit') {
     // Utility functions now imported from utils
 
     // Helper function to auto-populate prompts from document type defaults
@@ -4405,7 +4416,19 @@ const SummarizerPrototype = () => {
         return;
       }
       
-      if (editingSummarizerId) {
+      if (isInBatchMode) {
+        // Batch mode - save current formData back to batch array
+        setBatchCopySummarizers(prev =>
+          prev.map(s =>
+            s.id === selectedBatchSummarizer
+              ? { ...formData, id: s.id, _isModified: true }
+              : s
+          )
+        );
+
+        // Don't navigate away, stay in batch mode
+        alert('Summarizer updated! Click "Save All" when you\'re done editing all summarizers.');
+      } else if (editingSummarizerId) {
         // Update existing summarizer
         const updatedSummarizer = {
           ...formData,
@@ -4414,15 +4437,16 @@ const SummarizerPrototype = () => {
           doctorName: selectedDoctor?.name,
           ehr: selectedDoctor?.ehr
         };
-        
-        setCreatedSummarizers(prev => prev.map(s => 
+
+        setCreatedSummarizers(prev => prev.map(s =>
           s.id === editingSummarizerId ? updatedSummarizer : s
         ));
-        
+
         const statusMessage = 'Summarizer updated successfully!\n\n✓ Configuration saved\n✓ Ready for immediate use';
-        
+
         alert(statusMessage);
         setEditingSummarizerId(null);
+        setCurrentView('doctors');
       } else {
         // Create new summarizer
         const newSummarizer = {
@@ -4433,28 +4457,120 @@ const SummarizerPrototype = () => {
           ehr: selectedDoctor?.ehr,
           active: true
         };
-        
+
         setCreatedSummarizers(prev => [...prev, newSummarizer]);
-        
+
         const statusMessage = 'Summarizer created successfully!\n\n✓ Summarizer entry created in database\n✓ Configuration saved\n✓ Ready for immediate use';
-        
+
         alert(statusMessage);
+        setCurrentView('doctors');
       }
-      
-      setCurrentView('doctors');
     };
 
     return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50">
-        <div className="max-w-4xl mx-auto px-6 py-8">
+      <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50 flex">
+        {/* Left Sidebar - Batch Summarizer List (only shown in batch mode) */}
+        {isInBatchMode && (
+          <div className="w-80 bg-white border-r border-slate-200 flex flex-col">
+            <div className="p-6 border-b border-slate-200">
+              <button
+                onClick={() => {
+                  if (window.confirm('Discard all changes and go back?')) {
+                    setBatchCopySummarizers([]);
+                    setSelectedBatchSummarizer(null);
+                    setCurrentView('doctors');
+                  }
+                }}
+                className="flex items-center gap-2 text-slate-600 hover:text-slate-800 mb-4 transition-colors text-sm"
+              >
+                <ChevronRight className="w-4 h-4 rotate-180" />
+                Back
+              </button>
+              <h2 className="text-lg font-bold text-slate-800">Batch Edit</h2>
+              <p className="text-sm text-slate-600">
+                {batchCopySummarizers.length} summarizers for {selectedDoctor?.name}
+              </p>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-4 space-y-2">
+              {batchCopySummarizers.map((summarizer, index) => {
+                const isSelected = summarizer.id === selectedBatchSummarizer;
+                const hasChanges = summarizer._isModified;
+
+                return (
+                  <div
+                    key={summarizer.id}
+                    onClick={() => setSelectedBatchSummarizer(summarizer.id)}
+                    className={`p-3 rounded-lg cursor-pointer transition-all ${
+                      isSelected
+                        ? 'bg-blue-100 border-2 border-blue-500'
+                        : 'bg-slate-50 border-2 border-transparent hover:border-blue-300'
+                    }`}
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className="text-xs font-medium text-slate-500">#{index + 1}</span>
+                          {hasChanges && (
+                            <span className="w-2 h-2 bg-orange-500 rounded-full" title="Modified"></span>
+                          )}
+                        </div>
+                        <div className="font-medium text-sm text-slate-800 truncate">
+                          {summarizer.name || 'Untitled Summarizer'}
+                        </div>
+                        {summarizer.selectedResource && (
+                          <div className="text-xs text-slate-500 truncate mt-1">
+                            {summarizer.selectedResource}
+                          </div>
+                        )}
+                      </div>
+                      {isSelected && (
+                        <Check className="w-4 h-4 text-blue-600 flex-shrink-0" />
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className="p-4 border-t border-slate-200">
+              <button
+                onClick={() => {
+                  // Save all summarizers
+                  const newSummarizers = batchCopySummarizers.map(s => {
+                    const { _isNew, _isModified, originalId, ...rest } = s;
+                    return rest;
+                  });
+
+                  setCreatedSummarizers(prev => [...prev, ...newSummarizers]);
+                  alert(`Successfully created ${newSummarizers.length} summarizers!`);
+
+                  // Reset and go back
+                  setBatchCopySummarizers([]);
+                  setSelectedBatchSummarizer(null);
+                  setCurrentView('doctors');
+                }}
+                className="w-full px-4 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-lg font-semibold flex items-center justify-center gap-2 transition-all shadow-lg hover:shadow-xl"
+              >
+                <Save className="w-4 h-4" />
+                Save All Summarizers
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Main Content Area */}
+        <div className={`flex-1 overflow-y-auto ${isInBatchMode ? '' : 'max-w-4xl mx-auto'} px-6 py-8`}>
           <div className="mb-8">
-            <button
-              onClick={handleCancelCreate}
-              className="flex items-center gap-2 text-slate-600 hover:text-slate-800 mb-4 transition-colors"
-            >
-              <ChevronRight className="w-4 h-4 rotate-180" />
-              Back to Doctors
-            </button>
+            {!isInBatchMode && (
+              <button
+                onClick={handleCancelCreate}
+                className="flex items-center gap-2 text-slate-600 hover:text-slate-800 mb-4 transition-colors"
+              >
+                <ChevronRight className="w-4 h-4 rotate-180" />
+                Back to Doctors
+              </button>
+            )}
             
             <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-200/50">
               <div className="flex items-center gap-4">
@@ -4463,7 +4579,7 @@ const SummarizerPrototype = () => {
                 </div>
                 <div>
                   <h1 className="text-2xl font-bold text-slate-800">
-                    {editingSummarizerId ? 'Edit Summarizer' : 'Create New Summarizer'}
+                    {isInBatchMode ? 'Edit Batch Summarizer' : editingSummarizerId ? 'Edit Summarizer' : 'Create New Summarizer'}
                   </h1>
                   <p className="text-slate-600">for {selectedDoctor?.name} • {selectedDoctor?.ehr} EHR</p>
                 </div>
@@ -4472,20 +4588,22 @@ const SummarizerPrototype = () => {
           </div>
 
           <form onSubmit={handleFormSubmit} className="space-y-8">
-            {/* Prominent Copy Button */}
-            <div className="mb-6">
-              <button
-                type="button"
-                onClick={() => setShowCopySummarizerModal(true)}
-                className="w-full px-6 py-4 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-xl font-semibold flex items-center justify-center gap-3 shadow-lg hover:shadow-xl transition-all duration-200 text-base"
-              >
-                <Copy className="w-5 h-5" />
-                Copy from Existing Summarizers
-              </button>
-              <p className="text-sm text-slate-600 text-center mt-2">
-                Start by copying an existing summarizer configuration
-              </p>
-            </div>
+            {/* Prominent Copy Button (hidden in batch mode) */}
+            {!isInBatchMode && (
+              <div className="mb-6">
+                <button
+                  type="button"
+                  onClick={() => setShowCopySummarizerModal(true)}
+                  className="w-full px-6 py-4 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-xl font-semibold flex items-center justify-center gap-3 shadow-lg hover:shadow-xl transition-all duration-200 text-base"
+                >
+                  <Copy className="w-5 h-5" />
+                  Copy from Existing Summarizers
+                </button>
+                <p className="text-sm text-slate-600 text-center mt-2">
+                  Start by copying an existing summarizer configuration
+                </p>
+              </div>
+            )}
             
             {/* Section 1: Basic Information */}
             <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-200/50">
@@ -6449,49 +6567,6 @@ const SummarizerPrototype = () => {
           )}
         </div>
       </div>
-    );
-  }
-
-  // BATCH COPY EDIT VIEW
-  if (currentView === 'batch-copy-edit') {
-    return (
-      <BatchCopyEditView
-        selectedDoctor={selectedDoctor}
-        batchSummarizers={batchCopySummarizers}
-        selectedSummarizerId={selectedBatchSummarizer}
-        onSelectSummarizer={(id) => setSelectedBatchSummarizer(id)}
-        onUpdateSummarizer={(id, updates) => {
-          setBatchCopySummarizers(prev =>
-            prev.map(s =>
-              s.id === id
-                ? { ...s, ...updates, _isModified: true }
-                : s
-            )
-          );
-        }}
-        onSaveAll={() => {
-          // Save all summarizers
-          const newSummarizers = batchCopySummarizers.map(s => {
-            const { _isNew, _isModified, originalId, ...rest } = s;
-            return rest;
-          });
-
-          setCreatedSummarizers(prev => [...prev, ...newSummarizers]);
-          alert(`Successfully created ${newSummarizers.length} summarizers!`);
-
-          // Reset and go back
-          setBatchCopySummarizers([]);
-          setSelectedBatchSummarizer(null);
-          setCurrentView('doctors');
-        }}
-        onBack={() => {
-          if (window.confirm('Discard all changes and go back?')) {
-            setBatchCopySummarizers([]);
-            setSelectedBatchSummarizer(null);
-            setCurrentView('create');
-          }
-        }}
-      />
     );
   }
 
