@@ -618,6 +618,16 @@ const SummarizerPrototype = () => {
   const [showCopySummarizerModal, setShowCopySummarizerModal] = useState(false);
   const [copySourceDoctorForSummarizer, setCopySourceDoctorForSummarizer] = useState(null);
 
+  // Sync formData with current batch summarizer when selection changes
+  useEffect(() => {
+    const isInBatchMode = currentView === 'batch-copy-edit' && batchCopySummarizers.length > 0;
+    const currentBatchSummarizer = batchCopySummarizers.find(s => s.id === selectedBatchSummarizer);
+
+    if (isInBatchMode && currentBatchSummarizer) {
+      setFormData(currentBatchSummarizer);
+    }
+  }, [selectedBatchSummarizer, currentView, batchCopySummarizers]);
+
   // ============================================================================
   // HELPER FUNCTIONS
   // ============================================================================
@@ -4118,13 +4128,6 @@ const SummarizerPrototype = () => {
   const currentBatchSummarizer = isInBatchMode
     ? batchCopySummarizers.find(s => s.id === selectedBatchSummarizer)
     : null;
-
-  // Sync formData with current batch summarizer when selection changes
-  React.useEffect(() => {
-    if (isInBatchMode && currentBatchSummarizer) {
-      setFormData(currentBatchSummarizer);
-    }
-  }, [selectedBatchSummarizer, isInBatchMode]);
 
   if ((currentView === 'create' && createType === 'summarizer') || currentView === 'batch-copy-edit') {
     // Utility functions now imported from utils
