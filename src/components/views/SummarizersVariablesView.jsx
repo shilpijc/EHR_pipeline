@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { ChevronRight, Plus, X } from 'lucide-react';
 import { templateHierarchy } from '../../config';
 import { maskEmail } from '../../utils';
@@ -26,9 +26,18 @@ const SummarizersVariablesView = ({
   onBack,
   onEditSummarizer,
   onSelectCreateType,
-  onJumpToSection
+  onJumpToSection,
+  onAddChildSection
 }) => {
+  console.log('SummarizersVariablesView received onAddChildSection:', typeof onAddChildSection, onAddChildSection);
   const doctorSummarizers = createdSummarizers.filter(s => s.doctorId === selectedDoctor?.id);
+
+  // State for inline inform prompt
+  const [informPromptExpanded, setInformPromptExpanded] = useState(null); // Format: `${summarizer.id}-${sectionKey}`
+  const [informPromptText, setInformPromptText] = useState('');
+
+  // State for section hover and context menu
+  const [hoveredSection, setHoveredSection] = useState(null);
   
   // Combined View helpers
   const templates = ['general', 'followup', 'neurology', 'initial'];
@@ -174,20 +183,9 @@ const SummarizersVariablesView = ({
                           onClick={(e) => {
                             e.preventDefault();
                             e.stopPropagation();
-                            const newSummarizer = {
-                              id: `${summarizer.id}-${sectionKey}-${Date.now()}`,
-                              type: 'summarizer',
-                              name: summarizer.name,
-                              bgColor: '#fef3c7',
-                              color: '#92400e',
-                              action: 'inform',
-                              instructions: ''
-                            };
-                            setSectionSummarizers(prev => ({
-                              ...prev,
-                              [sectionKey]: [...(prev[sectionKey] || []), newSummarizer]
-                            }));
-                            setCellSummarizerDropdown(null);
+                            const expandKey = `${summarizer.id}-${sectionKey}`;
+                            setInformPromptExpanded(expandKey);
+                            setInformPromptText('');
                           }}
                           className="px-2 py-1.5 bg-amber-50 hover:bg-amber-100 border border-amber-300 rounded text-xs font-medium text-amber-700 transition-colors flex items-center justify-center gap-1"
                         >
@@ -195,6 +193,63 @@ const SummarizersVariablesView = ({
                           <span>Inform</span>
                         </button>
                       </div>
+
+                      {/* Inline Inform Prompt Textbox */}
+                      {informPromptExpanded === `${summarizer.id}-${sectionKey}` && (
+                        <div className="mt-3 ml-7 p-3 bg-amber-50 border border-amber-200 rounded">
+                          <label className="block text-xs font-semibold text-amber-900 mb-2">
+                            Inform Instructions (optional)
+                          </label>
+                          <textarea
+                            value={informPromptText}
+                            onChange={(e) => setInformPromptText(e.target.value)}
+                            placeholder="Enter instructions for this inform action..."
+                            className="w-full p-2 text-xs border border-amber-300 rounded focus:ring-2 focus:ring-amber-500 focus:border-amber-500 resize-none"
+                            rows={3}
+                            onClick={(e) => e.stopPropagation()}
+                          />
+                          <div className="flex gap-2 mt-2">
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                const newSummarizer = {
+                                  id: `${summarizer.id}-${sectionKey}-${Date.now()}`,
+                                  type: 'summarizer',
+                                  name: summarizer.name,
+                                  bgColor: '#fef3c7',
+                                  color: '#92400e',
+                                  action: 'inform',
+                                  instructions: informPromptText
+                                };
+                                setSectionSummarizers(prev => ({
+                                  ...prev,
+                                  [sectionKey]: [...(prev[sectionKey] || []), newSummarizer]
+                                }));
+                                setInformPromptExpanded(null);
+                                setInformPromptText('');
+                                setCellSummarizerDropdown(null);
+                              }}
+                              className="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded text-xs font-medium transition-colors"
+                            >
+                              Save
+                            </button>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                setInformPromptExpanded(null);
+                                setInformPromptText('');
+                              }}
+                              className="px-3 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded text-xs font-medium transition-colors"
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   ))
                 ) : (
@@ -304,20 +359,9 @@ const SummarizersVariablesView = ({
                         onClick={(e) => {
                           e.preventDefault();
                           e.stopPropagation();
-                          const newSummarizer = {
-                            id: `${summarizer.id}-${sectionKey}-${Date.now()}`,
-                            type: 'summarizer',
-                            name: summarizer.name,
-                            bgColor: '#fef3c7',
-                            color: '#92400e',
-                            action: 'inform',
-                            instructions: ''
-                          };
-                          setSectionSummarizers(prev => ({
-                            ...prev,
-                            [sectionKey]: [...(prev[sectionKey] || []), newSummarizer]
-                          }));
-                          setCellSummarizerDropdown(null);
+                          const expandKey = `${summarizer.id}-${sectionKey}`;
+                          setInformPromptExpanded(expandKey);
+                          setInformPromptText('');
                         }}
                         className="px-2 py-1.5 bg-amber-50 hover:bg-amber-100 border border-amber-300 rounded text-xs font-medium text-amber-700 transition-colors flex items-center justify-center gap-1"
                       >
@@ -325,6 +369,63 @@ const SummarizersVariablesView = ({
                         <span>Inform</span>
                       </button>
                     </div>
+
+                    {/* Inline Inform Prompt Textbox */}
+                    {informPromptExpanded === `${summarizer.id}-${sectionKey}` && (
+                      <div className="mt-3 ml-7 p-3 bg-amber-50 border border-amber-200 rounded">
+                        <label className="block text-xs font-semibold text-amber-900 mb-2">
+                          Inform Instructions (optional)
+                        </label>
+                        <textarea
+                          value={informPromptText}
+                          onChange={(e) => setInformPromptText(e.target.value)}
+                          placeholder="Enter instructions for this inform action..."
+                          className="w-full p-2 text-xs border border-amber-300 rounded focus:ring-2 focus:ring-amber-500 focus:border-amber-500 resize-none"
+                          rows={3}
+                          onClick={(e) => e.stopPropagation()}
+                        />
+                        <div className="flex gap-2 mt-2">
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              const newSummarizer = {
+                                id: `${summarizer.id}-${sectionKey}-${Date.now()}`,
+                                type: 'summarizer',
+                                name: summarizer.name,
+                                bgColor: '#fef3c7',
+                                color: '#92400e',
+                                action: 'inform',
+                                instructions: informPromptText
+                              };
+                              setSectionSummarizers(prev => ({
+                                ...prev,
+                                [sectionKey]: [...(prev[sectionKey] || []), newSummarizer]
+                              }));
+                              setInformPromptExpanded(null);
+                              setInformPromptText('');
+                              setCellSummarizerDropdown(null);
+                            }}
+                            className="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded text-xs font-medium transition-colors"
+                          >
+                            Save
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              setInformPromptExpanded(null);
+                              setInformPromptText('');
+                            }}
+                            className="px-3 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded text-xs font-medium transition-colors"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 ))
               ) : (
@@ -513,9 +614,46 @@ const SummarizersVariablesView = ({
                       <tr
                         key={section.key}
                         className={`border-b border-slate-200 hover:bg-slate-50/50 transition-colors ${bgColor}`}
+                        onMouseEnter={() => {
+                          console.log('Mouse entered section:', section.name, section.key, section.level);
+                          setHoveredSection(section.key);
+                        }}
+                        onMouseLeave={() => {
+                          console.log('Mouse left section:', section.name);
+                          setHoveredSection(null);
+                        }}
                       >
-                        <td className={`${paddingLeft} py-3 ${textColor} ${fontWeight} ${fontSize} border-r-2 border-slate-200`}>
-                          {section.name}
+                        <td className={`${paddingLeft} py-3 ${textColor} ${fontWeight} ${fontSize} border-r-2 border-slate-200 relative`}>
+                          <div className="flex items-center gap-2">
+                            <span>{section.name}</span>
+                            {/* Show Add Child button - TEMPORARILY ALWAYS VISIBLE FOR TESTING */}
+                            {section.level !== 'grandchild' && onAddChildSection && (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  console.log('Add Child clicked for:', section.name);
+                                  const childName = prompt(`Enter name for new child section under "${section.name}":`);
+                                  if (childName && childName.trim()) {
+                                    onAddChildSection({
+                                      parentKey: section.level === 'parent' ? section.key : section.parentKey,
+                                      childKey: section.level === 'child' ? section.key : null,
+                                      level: section.level === 'parent' ? 'child' : 'grandchild',
+                                      name: childName.trim()
+                                    });
+                                  }
+                                }}
+                                className={`text-xs px-2 py-1 rounded flex items-center gap-1 transition-colors shadow-md ${
+                                  hoveredSection === section.key
+                                    ? 'bg-green-500 hover:bg-green-600 text-white'
+                                    : 'bg-green-200 text-green-800'
+                                }`}
+                                title="Add child section"
+                              >
+                                <Plus className="w-3 h-3" />
+                                <span>Add Child</span>
+                              </button>
+                            )}
+                          </div>
                         </td>
                         {templates.map(template => (
                           <td

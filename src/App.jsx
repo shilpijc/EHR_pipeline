@@ -1081,6 +1081,89 @@ const SummarizerPrototype = () => {
     }, 100);
   };
 
+  const handleAddChildSection = ({ parentKey, childKey, level, name }) => {
+    // Generate a unique key for the new section
+    const sectionKey = name.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '');
+
+    const newSection = {
+      name: name,
+      type: 'text'
+    };
+
+    if (level === 'child') {
+      // Adding a child to a parent section
+      const merged = {...templateHierarchy, ...customSections};
+      const parent = merged[parentKey];
+      if (parent) {
+        if (parentKey in customSections) {
+          // Parent is already in customSections, just add the child
+          setCustomSections(prev => ({
+            ...prev,
+            [parentKey]: {
+              ...prev[parentKey],
+              children: {...(prev[parentKey].children || {}), [sectionKey]: newSection}
+            }
+          }));
+        } else {
+          // Parent is in templateHierarchy, need to copy it to customSections first
+          setCustomSections(prev => ({
+            ...prev,
+            [parentKey]: {
+              ...templateHierarchy[parentKey],
+              children: {...(templateHierarchy[parentKey].children || {}), [sectionKey]: newSection}
+            }
+          }));
+        }
+      }
+    } else if (level === 'grandchild') {
+      // Adding a grandchild to a child section
+      const merged = {...templateHierarchy, ...customSections};
+      const parent = merged[parentKey];
+      if (parent && parent.children && parent.children[childKey]) {
+        if (parentKey in customSections) {
+          // Parent is already in customSections
+          setCustomSections(prev => ({
+            ...prev,
+            [parentKey]: {
+              ...prev[parentKey],
+              children: {
+                ...prev[parentKey].children,
+                [childKey]: {
+                  ...prev[parentKey].children[childKey],
+                  children: {
+                    ...(prev[parentKey].children[childKey].children || {}),
+                    [sectionKey]: newSection
+                  }
+                }
+              }
+            }
+          }));
+        } else {
+          // Parent is in templateHierarchy
+          setCustomSections(prev => ({
+            ...prev,
+            [parentKey]: {
+              ...templateHierarchy[parentKey],
+              children: {
+                ...templateHierarchy[parentKey].children,
+                [childKey]: {
+                  ...templateHierarchy[parentKey].children[childKey],
+                  children: {
+                    ...(templateHierarchy[parentKey].children[childKey].children || {}),
+                    [sectionKey]: newSection
+                  }
+                }
+              }
+            }
+          }));
+        }
+      }
+    }
+
+    // Initialize the section in sectionSummarizers
+    setSectionSummarizers(prev => ({...prev, [sectionKey]: []}));
+  };
+
   // ============================================================================
   // SUMMARIZER RENDER FUNCTIONS
   // ============================================================================
@@ -2223,6 +2306,7 @@ const SummarizerPrototype = () => {
         onEditSummarizer={handleEditSummarizer}
         onSelectCreateType={handleSelectCreateType}
         onJumpToSection={jumpToSection}
+        onAddChildSection={handleAddChildSection}
       />
     );
   }
