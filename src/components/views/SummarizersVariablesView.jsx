@@ -184,8 +184,10 @@ const SummarizersVariablesView = ({
                             e.preventDefault();
                             e.stopPropagation();
                             const expandKey = `${summarizer.id}-${sectionKey}`;
+                            console.log('Inform clicked! Setting expandKey:', expandKey);
                             setInformPromptExpanded(expandKey);
                             setInformPromptText('');
+                            console.log('State should be updated now');
                           }}
                           className="px-2 py-1.5 bg-amber-50 hover:bg-amber-100 border border-amber-300 rounded text-xs font-medium text-amber-700 transition-colors flex items-center justify-center gap-1"
                         >
@@ -195,7 +197,15 @@ const SummarizersVariablesView = ({
                       </div>
 
                       {/* Inline Inform Prompt Textbox */}
-                      {informPromptExpanded === `${summarizer.id}-${sectionKey}` && (
+                      {(() => {
+                        const shouldShow = informPromptExpanded === `${summarizer.id}-${sectionKey}`;
+                        console.log('Checking if should show inform prompt:', {
+                          informPromptExpanded,
+                          expectedKey: `${summarizer.id}-${sectionKey}`,
+                          shouldShow
+                        });
+                        return shouldShow;
+                      })() && (
                         <div className="mt-3 ml-7 p-3 bg-amber-50 border border-amber-200 rounded">
                           <label className="block text-xs font-semibold text-amber-900 mb-2">
                             Inform Instructions (optional)
