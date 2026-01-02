@@ -125,26 +125,15 @@ const DoctorsView = ({
                         </button>
 
                         {createTypeDropdown === doctor.id && (
-                          <div className="absolute right-0 mt-2 w-64 bg-white rounded-xl shadow-xl border border-slate-200 py-2 z-[100]" onClick={(e) => e.stopPropagation()}>
+                          <div className="absolute right-0 mt-2 w-56 bg-white rounded-xl shadow-xl border border-slate-200 py-2 z-[100]" onClick={(e) => e.stopPropagation()}>
                             <button
                               onClick={() => handleSelectCreateType('summarizer')}
                               className="w-full px-4 py-2.5 text-left text-sm hover:bg-slate-50 transition-colors flex items-center gap-3"
                             >
                               <span className="text-xl">📊</span>
                               <div>
-                                <div className="font-medium text-slate-700">Create Single Summarizer</div>
-                                <div className="text-xs text-slate-500">Build a new summarizer from scratch</div>
-                              </div>
-                            </button>
-                            <div className="border-t border-slate-200 my-1"></div>
-                            <button
-                              onClick={() => handleSelectCreateType('batch-copy')}
-                              className="w-full px-4 py-2.5 text-left text-sm hover:bg-slate-50 transition-colors flex items-center gap-3"
-                            >
-                              <span className="text-xl">📋</span>
-                              <div>
-                                <div className="font-medium text-slate-700">Copy Multiple Summarizers</div>
-                                <div className="text-xs text-slate-500">Select and edit multiple at once</div>
+                                <div className="font-medium text-slate-700">Add Summarizer</div>
+                                <div className="text-xs text-slate-500">Extract and summarize data from EHR</div>
                               </div>
                             </button>
                           </div>
