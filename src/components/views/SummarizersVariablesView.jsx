@@ -232,32 +232,95 @@ const SummarizersVariablesView = ({
             </button>
             
             {isDropdownOpen && (
-              <div 
-                className="absolute top-full left-0 mt-1 w-64 bg-white rounded-lg shadow-xl border border-slate-200 py-2 z-50"
+              <div
+                className="absolute top-full left-0 mt-1 w-80 bg-white rounded-lg shadow-xl border border-slate-200 py-2 z-50"
                 onClick={(e) => e.stopPropagation()}
               >
                 {doctorSummarizers.length > 0 ? (
                   doctorSummarizers.map(summarizer => (
-                    <button
-                      key={summarizer.id}
-                      type="button"
-                      onClick={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        const selection = {
-                          sectionKey,
-                          template: templateTab,
-                          summarizerId: summarizer.id,
-                          summarizerName: summarizer.name
-                        };
-                        setCellSummarizerDropdown(null);
-                        setPendingSummarizerSelection(selection);
-                      }}
-                      className="w-full px-4 py-2 text-left text-sm hover:bg-slate-50 transition-colors flex items-center gap-2"
-                    >
-                      <span className="text-lg">📊</span>
-                      <span className="font-medium text-slate-700">{summarizer.name}</span>
-                    </button>
+                    <div key={summarizer.id} className="px-3 py-2 hover:bg-slate-50">
+                      <div className="flex items-center gap-2 mb-2">
+                        <span className="text-lg">📊</span>
+                        <span className="font-medium text-slate-700 text-sm">{summarizer.name}</span>
+                      </div>
+                      <div className="grid grid-cols-3 gap-1.5 ml-7">
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            const newSummarizer = {
+                              id: `${summarizer.id}-${sectionKey}-${Date.now()}`,
+                              type: 'summarizer',
+                              name: summarizer.name,
+                              bgColor: '#dbeafe',
+                              color: '#1e40af',
+                              action: 'append',
+                              instructions: ''
+                            };
+                            setSectionSummarizers(prev => ({
+                              ...prev,
+                              [sectionKey]: [...(prev[sectionKey] || []), newSummarizer]
+                            }));
+                            setCellSummarizerDropdown(null);
+                          }}
+                          className="px-2 py-1.5 bg-blue-50 hover:bg-blue-100 border border-blue-300 rounded text-xs font-medium text-blue-700 transition-colors flex items-center justify-center gap-1"
+                        >
+                          <span>➕</span>
+                          <span>Append</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            const newSummarizer = {
+                              id: `${summarizer.id}-${sectionKey}-${Date.now()}`,
+                              type: 'summarizer',
+                              name: summarizer.name,
+                              bgColor: '#dcfce7',
+                              color: '#166534',
+                              action: 'prepend',
+                              instructions: ''
+                            };
+                            setSectionSummarizers(prev => ({
+                              ...prev,
+                              [sectionKey]: [...(prev[sectionKey] || []), newSummarizer]
+                            }));
+                            setCellSummarizerDropdown(null);
+                          }}
+                          className="px-2 py-1.5 bg-green-50 hover:bg-green-100 border border-green-300 rounded text-xs font-medium text-green-700 transition-colors flex items-center justify-center gap-1"
+                        >
+                          <span>⬆️</span>
+                          <span>Prepend</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            const newSummarizer = {
+                              id: `${summarizer.id}-${sectionKey}-${Date.now()}`,
+                              type: 'summarizer',
+                              name: summarizer.name,
+                              bgColor: '#fef3c7',
+                              color: '#92400e',
+                              action: 'inform',
+                              instructions: ''
+                            };
+                            setSectionSummarizers(prev => ({
+                              ...prev,
+                              [sectionKey]: [...(prev[sectionKey] || []), newSummarizer]
+                            }));
+                            setCellSummarizerDropdown(null);
+                          }}
+                          className="px-2 py-1.5 bg-amber-50 hover:bg-amber-100 border border-amber-300 rounded text-xs font-medium text-amber-700 transition-colors flex items-center justify-center gap-1"
+                        >
+                          <span>💡</span>
+                          <span>Inform</span>
+                        </button>
+                      </div>
+                    </div>
                   ))
                 ) : (
                   <div className="px-4 py-2 text-sm text-slate-500">
@@ -299,28 +362,95 @@ const SummarizersVariablesView = ({
           </button>
           
           {isDropdownOpen && (
-            <div 
-              className="absolute top-full left-0 mt-1 w-64 bg-white rounded-lg shadow-xl border border-slate-200 py-2 z-50"
+            <div
+              className="absolute top-full left-0 mt-1 w-80 bg-white rounded-lg shadow-xl border border-slate-200 py-2 z-50"
               onClick={(e) => e.stopPropagation()}
             >
               {doctorSummarizers.length > 0 ? (
                 doctorSummarizers.map(summarizer => (
-                  <button
-                    key={summarizer.id}
-                    onClick={() => {
-                      setPendingSummarizerSelection({
-                        sectionKey,
-                        template: templateTab,
-                        summarizerId: summarizer.id,
-                        summarizerName: summarizer.name
-                      });
-                      setCellSummarizerDropdown(null);
-                    }}
-                    className="w-full px-4 py-2 text-left text-sm hover:bg-slate-50 transition-colors flex items-center gap-2"
-                  >
-                    <span className="text-lg">📊</span>
-                    <span className="font-medium text-slate-700">{summarizer.name}</span>
-                  </button>
+                  <div key={summarizer.id} className="px-3 py-2 hover:bg-slate-50">
+                    <div className="flex items-center gap-2 mb-2">
+                      <span className="text-lg">📊</span>
+                      <span className="font-medium text-slate-700 text-sm">{summarizer.name}</span>
+                    </div>
+                    <div className="grid grid-cols-3 gap-1.5 ml-7">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          const newSummarizer = {
+                            id: `${summarizer.id}-${sectionKey}-${Date.now()}`,
+                            type: 'summarizer',
+                            name: summarizer.name,
+                            bgColor: '#dbeafe',
+                            color: '#1e40af',
+                            action: 'append',
+                            instructions: ''
+                          };
+                          setSectionSummarizers(prev => ({
+                            ...prev,
+                            [sectionKey]: [...(prev[sectionKey] || []), newSummarizer]
+                          }));
+                          setCellSummarizerDropdown(null);
+                        }}
+                        className="px-2 py-1.5 bg-blue-50 hover:bg-blue-100 border border-blue-300 rounded text-xs font-medium text-blue-700 transition-colors flex items-center justify-center gap-1"
+                      >
+                        <span>➕</span>
+                        <span>Append</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          const newSummarizer = {
+                            id: `${summarizer.id}-${sectionKey}-${Date.now()}`,
+                            type: 'summarizer',
+                            name: summarizer.name,
+                            bgColor: '#dcfce7',
+                            color: '#166534',
+                            action: 'prepend',
+                            instructions: ''
+                          };
+                          setSectionSummarizers(prev => ({
+                            ...prev,
+                            [sectionKey]: [...(prev[sectionKey] || []), newSummarizer]
+                          }));
+                          setCellSummarizerDropdown(null);
+                        }}
+                        className="px-2 py-1.5 bg-green-50 hover:bg-green-100 border border-green-300 rounded text-xs font-medium text-green-700 transition-colors flex items-center justify-center gap-1"
+                      >
+                        <span>⬆️</span>
+                        <span>Prepend</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          const newSummarizer = {
+                            id: `${summarizer.id}-${sectionKey}-${Date.now()}`,
+                            type: 'summarizer',
+                            name: summarizer.name,
+                            bgColor: '#fef3c7',
+                            color: '#92400e',
+                            action: 'inform',
+                            instructions: ''
+                          };
+                          setSectionSummarizers(prev => ({
+                            ...prev,
+                            [sectionKey]: [...(prev[sectionKey] || []), newSummarizer]
+                          }));
+                          setCellSummarizerDropdown(null);
+                        }}
+                        className="px-2 py-1.5 bg-amber-50 hover:bg-amber-100 border border-amber-300 rounded text-xs font-medium text-amber-700 transition-colors flex items-center justify-center gap-1"
+                      >
+                        <span>💡</span>
+                        <span>Inform</span>
+                      </button>
+                    </div>
+                  </div>
                 ))
               ) : (
                 <div className="px-4 py-2 text-sm text-slate-500">
