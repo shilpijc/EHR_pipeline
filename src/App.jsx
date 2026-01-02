@@ -31,6 +31,8 @@ import {
 import BulkTransferPage from './components/BulkTransferPage';
 import DoctorsView from './components/views/DoctorsView';
 import SummarizersVariablesView from './components/views/SummarizersVariablesView';
+import BatchCopySelectView from './components/views/BatchCopySelectView';
+import BatchCopyEditView from './components/views/BatchCopyEditView';
 import CopyDoctorModal from './components/modals/CopyDoctorModal';
 
 // Import hooks (available for future use)
@@ -607,8 +609,13 @@ const SummarizerPrototype = () => {
   // ============================================================================
   // CREATE FLOW STATE
   // ============================================================================
-  const [createType, setCreateType] = useState(null); // 'summarizer' | null
+  const [createType, setCreateType] = useState(null); // 'summarizer' | 'batch-copy' | null
   const [showCreateTypeModal, setShowCreateTypeModal] = useState(false);
+
+  // Batch copy state
+  const [batchCopySummarizers, setBatchCopySummarizers] = useState([]); // Array of summarizers being batch edited
+  const [selectedBatchSummarizer, setSelectedBatchSummarizer] = useState(null); // Currently selected summarizer in left nav
+  const [batchCopySourceDoctor, setBatchCopySourceDoctor] = useState(null); // Source doctor for copying
   const [editingSummarizerId, setEditingSummarizerId] = useState(null);
   const [showCopySummarizerModal, setShowCopySummarizerModal] = useState(false);
   const [copySourceDoctorForSummarizer, setCopySourceDoctorForSummarizer] = useState(null);
@@ -762,7 +769,11 @@ const SummarizerPrototype = () => {
   const handleSelectCreateType = (type) => {
     setCreateType(type);
     setCreateTypeDropdown(null);
-    setCurrentView('create');
+    if (type === 'batch-copy') {
+      setCurrentView('batch-copy-select');
+    } else {
+      setCurrentView('create');
+    }
   };
 
   const handleEditSummarizer = (summarizerId) => {
@@ -6428,6 +6439,66 @@ const SummarizerPrototype = () => {
           )}
         </div>
       </div>
+    );
+  }
+
+  // BATCH COPY SELECT VIEW
+  if (currentView === 'batch-copy-select') {
+    return (
+      <BatchCopySelectView
+        selectedDoctor={selectedDoctor}
+        allDoctors={doctors}
+        createdSummarizers={createdSummarizers}
+        onBack={() => setCurrentView('doctors')}
+        onSelectSummarizers={(summarizers) => {
+          setBatchCopySummarizers(summarizers);
+          setSelectedBatchSummarizer(summarizers[0]?.id || null);
+          setCurrentView('batch-copy-edit');
+        }}
+      />
+    );
+  }
+
+  // BATCH COPY EDIT VIEW
+  if (currentView === 'batch-copy-edit') {
+    return (
+      <BatchCopyEditView
+        selectedDoctor={selectedDoctor}
+        batchSummarizers={batchCopySummarizers}
+        selectedSummarizerId={selectedBatchSummarizer}
+        onSelectSummarizer={(id) => setSelectedBatchSummarizer(id)}
+        onUpdateSummarizer={(id, updates) => {
+          setBatchCopySummarizers(prev =>
+            prev.map(s =>
+              s.id === id
+                ? { ...s, ...updates, _isModified: true }
+                : s
+            )
+          );
+        }}
+        onSaveAll={() => {
+          // Save all summarizers
+          const newSummarizers = batchCopySummarizers.map(s => {
+            const { _isNew, _isModified, originalId, ...rest } = s;
+            return rest;
+          });
+
+          setCreatedSummarizers(prev => [...prev, ...newSummarizers]);
+          alert(`Successfully created ${newSummarizers.length} summarizers!`);
+
+          // Reset and go back
+          setBatchCopySummarizers([]);
+          setSelectedBatchSummarizer(null);
+          setCurrentView('doctors');
+        }}
+        onBack={() => {
+          if (window.confirm('Discard all changes and go back?')) {
+            setBatchCopySummarizers([]);
+            setSelectedBatchSummarizer(null);
+            setCurrentView('doctors');
+          }
+        }}
+      />
     );
   }
 
