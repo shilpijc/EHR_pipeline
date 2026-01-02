@@ -29,7 +29,6 @@ const SummarizersVariablesView = ({
   onJumpToSection,
   onAddChildSection
 }) => {
-  console.log('SummarizersVariablesView received onAddChildSection:', typeof onAddChildSection, onAddChildSection);
   const doctorSummarizers = createdSummarizers.filter(s => s.doctorId === selectedDoctor?.id);
 
   // State for inline inform prompt
@@ -614,24 +613,17 @@ const SummarizersVariablesView = ({
                       <tr
                         key={section.key}
                         className={`border-b border-slate-200 hover:bg-slate-50/50 transition-colors ${bgColor}`}
-                        onMouseEnter={() => {
-                          console.log('Mouse entered section:', section.name, section.key, section.level);
-                          setHoveredSection(section.key);
-                        }}
-                        onMouseLeave={() => {
-                          console.log('Mouse left section:', section.name);
-                          setHoveredSection(null);
-                        }}
+                        onMouseEnter={() => setHoveredSection(section.key)}
+                        onMouseLeave={() => setHoveredSection(null)}
                       >
                         <td className={`${paddingLeft} py-3 ${textColor} ${fontWeight} ${fontSize} border-r-2 border-slate-200 relative`}>
                           <div className="flex items-center gap-2">
                             <span>{section.name}</span>
-                            {/* Show Add Child button - TEMPORARILY ALWAYS VISIBLE FOR TESTING */}
-                            {section.level !== 'grandchild' && onAddChildSection && (
+                            {/* Show Add Child button on hover for parent and child sections (not grandchild) */}
+                            {hoveredSection === section.key && section.level !== 'grandchild' && onAddChildSection && (
                               <button
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  console.log('Add Child clicked for:', section.name);
                                   const childName = prompt(`Enter name for new child section under "${section.name}":`);
                                   if (childName && childName.trim()) {
                                     onAddChildSection({
@@ -642,11 +634,7 @@ const SummarizersVariablesView = ({
                                     });
                                   }
                                 }}
-                                className={`text-xs px-2 py-1 rounded flex items-center gap-1 transition-colors shadow-md ${
-                                  hoveredSection === section.key
-                                    ? 'bg-green-500 hover:bg-green-600 text-white'
-                                    : 'bg-green-200 text-green-800'
-                                }`}
+                                className="text-xs px-2 py-1 bg-green-500 hover:bg-green-600 text-white rounded flex items-center gap-1 transition-colors shadow-md"
                                 title="Add child section"
                               >
                                 <Plus className="w-3 h-3" />
