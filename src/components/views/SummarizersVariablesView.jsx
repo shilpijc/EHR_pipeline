@@ -249,6 +249,7 @@ const SummarizersVariablesView = ({
                           onClick={(e) => {
                             e.preventDefault();
                             e.stopPropagation();
+                            console.log('Append clicked for summarizer:', summarizer.name, 'sectionKey:', sectionKey);
                             const newSummarizer = {
                               id: `${summarizer.id}-${sectionKey}-${Date.now()}`,
                               type: 'summarizer',
@@ -258,10 +259,15 @@ const SummarizersVariablesView = ({
                               action: 'append',
                               instructions: ''
                             };
-                            setSectionSummarizers(prev => ({
-                              ...prev,
-                              [sectionKey]: [...(prev[sectionKey] || []), newSummarizer]
-                            }));
+                            console.log('Creating new summarizer:', newSummarizer);
+                            setSectionSummarizers(prev => {
+                              const updated = {
+                                ...prev,
+                                [sectionKey]: [...(prev[sectionKey] || []), newSummarizer]
+                              };
+                              console.log('Updated sectionSummarizers:', updated);
+                              return updated;
+                            });
                             setCellSummarizerDropdown(null);
                           }}
                           className="px-2 py-1.5 bg-blue-50 hover:bg-blue-100 border border-blue-300 rounded text-xs font-medium text-blue-700 transition-colors flex items-center justify-center gap-1"
