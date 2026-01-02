@@ -6549,9 +6549,16 @@ const SummarizerPrototype = () => {
 
                         setBatchCopySummarizers(summarizersData);
                         setSelectedBatchSummarizer(summarizersData[0]?.id || null);
+
+                        // Initialize formData with first summarizer
+                        if (summarizersData[0]) {
+                          setFormData(summarizersData[0]);
+                        }
+
                         setShowCopySummarizerModal(false);
                         setSelectedSummarizers([]);
                         setCopySourceDoctorForSummarizer(null);
+                        setCreateType('summarizer');
                         setCurrentView('batch-copy-edit');
                       }
                     }}
