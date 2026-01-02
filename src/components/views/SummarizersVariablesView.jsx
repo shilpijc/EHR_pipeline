@@ -27,7 +27,8 @@ const SummarizersVariablesView = ({
   onEditSummarizer,
   onSelectCreateType,
   onJumpToSection,
-  onAddChildSection
+  onAddChildSection,
+  onAddParentSection
 }) => {
   const doctorSummarizers = createdSummarizers.filter(s => s.doctorId === selectedDoctor?.id);
 
@@ -546,17 +547,28 @@ const SummarizersVariablesView = ({
           <div className="bg-white rounded-2xl shadow-lg border border-slate-200">
             {/* Mode Toggle: Summarizers vs Variables */}
             <div className="p-6 border-b border-slate-200">
-              <div className="flex gap-4">
-                <button
-                  onClick={() => setConfigMode('summarizers')}
-                  className={`px-6 py-3 rounded-xl font-semibold transition-all duration-200 ${
-                    configMode === 'summarizers'
-                      ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-lg'
-                      : 'bg-white text-slate-600 border-2 border-slate-200 hover:border-blue-300'
-                  }`}
-                >
-                  Summarizers
-                </button>
+              <div className="flex items-center justify-between">
+                <div className="flex gap-4">
+                  <button
+                    onClick={() => setConfigMode('summarizers')}
+                    className={`px-6 py-3 rounded-xl font-semibold transition-all duration-200 ${
+                      configMode === 'summarizers'
+                        ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-lg'
+                        : 'bg-white text-slate-600 border-2 border-slate-200 hover:border-blue-300'
+                    }`}
+                  >
+                    Summarizers
+                  </button>
+                </div>
+                {onAddParentSection && (
+                  <button
+                    onClick={onAddParentSection}
+                    className="px-4 py-2 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white rounded-lg text-sm font-medium flex items-center gap-2 transition-all duration-200 shadow-sm hover:shadow-md"
+                  >
+                    <Plus className="w-4 h-4" />
+                    New Parent Section
+                  </button>
+                )}
               </div>
             </div>
 

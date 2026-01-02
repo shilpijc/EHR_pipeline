@@ -1081,6 +1081,27 @@ const SummarizerPrototype = () => {
     }, 100);
   };
 
+  const handleAddParentSection = () => {
+    const sectionName = prompt('Enter name for new parent section:');
+    if (!sectionName || !sectionName.trim()) return;
+
+    const sectionKey = sectionName.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '');
+
+    const newSection = {
+      name: sectionName.trim(),
+      type: 'text',
+      children: {}
+    };
+
+    setCustomSections(prev => ({
+      ...prev,
+      [sectionKey]: newSection
+    }));
+
+    // Initialize the section in sectionSummarizers
+    setSectionSummarizers(prev => ({...prev, [sectionKey]: []}));
+  };
+
   const handleAddChildSection = ({ parentKey, childKey, level, name }) => {
     // Generate a unique key for the new section
     const sectionKey = name.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '');
@@ -2307,6 +2328,7 @@ const SummarizerPrototype = () => {
         onSelectCreateType={handleSelectCreateType}
         onJumpToSection={jumpToSection}
         onAddChildSection={handleAddChildSection}
+        onAddParentSection={handleAddParentSection}
       />
     );
   }
