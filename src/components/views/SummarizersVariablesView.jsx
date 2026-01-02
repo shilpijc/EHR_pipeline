@@ -31,13 +31,12 @@ const SummarizersVariablesView = ({
   const doctorSummarizers = createdSummarizers.filter(s => s.doctorId === selectedDoctor?.id);
   
   // Combined View helpers
-  const templates = ['general', 'followup', 'neurology', 'initial', 'patient-recap'];
+  const templates = ['general', 'followup', 'neurology', 'initial'];
   const templateNames = {
     general: 'General Template',
     followup: 'Follow-up',
     neurology: 'Neurology',
-    initial: 'Initial Consultation',
-    'patient-recap': 'Patient Recap'
+    initial: 'Initial Consultation'
   };
 
   const getAllSections = () => {
@@ -82,136 +81,6 @@ const SummarizersVariablesView = ({
   const allSections = getAllSections();
 
   const renderCellContent = (sectionKey, templateTab) => {
-    // Patient Recap template - special handling: only summarizer selection, no sections
-    if (templateTab === 'patient-recap' || sectionKey === 'patient-recap') {
-      const recapSummarizers = sectionSummarizers['patient-recap'] || [];
-      const cellKey = `patient-recap-${templateTab}`;
-      const isDropdownOpen = cellSummarizerDropdown === cellKey;
-      
-      if (configMode === 'summarizers') {
-        if (recapSummarizers.length === 0) {
-          return (
-            <div className="relative">
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setCellSummarizerDropdown(isDropdownOpen ? null : cellKey);
-                }}
-                className="w-full h-full min-h-[40px] flex items-center justify-center text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors border-2 border-dashed border-gray-300 hover:border-blue-400"
-                title="Add summarizer to Patient Recap"
-              >
-                <Plus className="w-5 h-5" />
-              </button>
-              
-              {isDropdownOpen && (
-                <div 
-                  className="absolute top-full left-0 mt-1 w-64 bg-white rounded-lg shadow-xl border border-slate-200 py-2 z-50"
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  {doctorSummarizers.length > 0 ? (
-                    doctorSummarizers.map(summarizer => (
-                      <button
-                        key={summarizer.id}
-                        onClick={() => {
-                          const newSummarizer = {
-                            id: `${summarizer.id}-patient-recap-${Date.now()}`,
-                            type: 'summarizer',
-                            name: summarizer.name,
-                            bgColor: '#dbeafe',
-                            color: '#1e40af',
-                            action: 'append'
-                          };
-                          setSectionSummarizers(prev => ({
-                            ...prev,
-                            'patient-recap': [...(prev['patient-recap'] || []), newSummarizer]
-                          }));
-                          setCellSummarizerDropdown(null);
-                        }}
-                        className="w-full px-4 py-2 text-left text-sm hover:bg-slate-50 transition-colors flex items-center gap-2"
-                      >
-                        <span className="text-lg">📊</span>
-                        <span className="font-medium text-slate-700">{summarizer.name}</span>
-                      </button>
-                    ))
-                  ) : (
-                    <div className="px-4 py-2 text-sm text-slate-500">
-                      No summarizers available. Create one first.
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-          );
-        }
-        
-        return (
-          <div className="space-y-1 relative">
-            {recapSummarizers.map(sum => (
-              <div
-                key={sum.id}
-                className="text-xs px-2 py-1 rounded hover:shadow-md transition-all cursor-pointer"
-                style={{
-                  background: sum.bgColor || '#dbeafe',
-                  color: sum.color || '#1e40af'
-                }}
-              >
-                📊 {sum.name}
-              </div>
-            ))}
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                setCellSummarizerDropdown(isDropdownOpen ? null : cellKey);
-              }}
-              className="mt-1 w-full flex items-center justify-center text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors border border-dashed border-gray-300 hover:border-blue-400 p-1"
-              title="Add another summarizer"
-            >
-              <Plus className="w-4 h-4" />
-            </button>
-            
-            {isDropdownOpen && (
-              <div 
-                className="absolute top-full left-0 mt-1 w-64 bg-white rounded-lg shadow-xl border border-slate-200 py-2 z-50"
-                onClick={(e) => e.stopPropagation()}
-              >
-                {doctorSummarizers.length > 0 ? (
-                  doctorSummarizers.map(summarizer => (
-                    <button
-                      key={summarizer.id}
-                      onClick={() => {
-                        const newSummarizer = {
-                          id: `${summarizer.id}-patient-recap-${Date.now()}`,
-                          type: 'summarizer',
-                          name: summarizer.name,
-                          bgColor: '#dbeafe',
-                          color: '#1e40af',
-                          action: 'append'
-                        };
-                        setSectionSummarizers(prev => ({
-                          ...prev,
-                          'patient-recap': [...(prev['patient-recap'] || []), newSummarizer]
-                        }));
-                        setCellSummarizerDropdown(null);
-                      }}
-                      className="w-full px-4 py-2 text-left text-sm hover:bg-slate-50 transition-colors flex items-center gap-2"
-                    >
-                      <span className="text-lg">📊</span>
-                      <span className="font-medium text-slate-700">{summarizer.name}</span>
-                    </button>
-                  ))
-                ) : (
-                  <div className="px-4 py-2 text-sm text-slate-500">
-                    No summarizers available. Create one first.
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-        );
-      }
-      return null;
-    }
-    
     if (configMode === 'summarizers') {
       const summarizers = sectionSummarizers[sectionKey];
       const cellKey = `${sectionKey}-${templateTab}`;
@@ -615,25 +484,6 @@ const SummarizersVariablesView = ({
                   </tr>
                 </thead>
                 <tbody>
-                  {/* Patient Recap template - special row */}
-                  {templates.includes('patient-recap') && (
-                    <tr className="border-b border-slate-200 hover:bg-slate-50/50 transition-colors bg-gradient-to-r from-purple-50 to-pink-50">
-                      <td className="pl-6 py-3 text-slate-900 font-bold text-base border-r-2 border-slate-200">
-                        Patient Recap
-                      </td>
-                      {templates.map(template => (
-                        <td
-                          key={`patient-recap-${template}`}
-                          className="px-4 py-3 border-r border-slate-200"
-                        >
-                          {template === 'patient-recap' 
-                            ? renderCellContent('patient-recap', template) 
-                            : <span className="text-gray-400">—</span>}
-                        </td>
-                      ))}
-                    </tr>
-                  )}
-                  
                   {/* Regular template sections */}
                   {allSections.map((section) => {
                     let bgColor = 'bg-white';
@@ -672,9 +522,7 @@ const SummarizersVariablesView = ({
                             key={`${section.key}-${template}`}
                             className="px-4 py-3 border-r border-slate-200"
                           >
-                            {template === 'patient-recap' 
-                              ? <span className="text-gray-400">—</span> 
-                              : renderCellContent(section.key, template)}
+                            {renderCellContent(section.key, template)}
                           </td>
                         ))}
                       </tr>
