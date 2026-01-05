@@ -8,6 +8,7 @@ import PromptEditModal from '../modals/PromptEditModal';
 const SummarizersVariablesView = ({
   selectedDoctor,
   createdSummarizers,
+  setCreatedSummarizers,
   configMode,
   setConfigMode,
   sectionSummarizers,
@@ -38,6 +39,12 @@ const SummarizersVariablesView = ({
 
   // State for section hover and context menu
   const [hoveredSection, setHoveredSection] = useState(null);
+
+  // State for delete functionality
+  const [hoveredBadge, setHoveredBadge] = useState(null); // Format: `${sum.id}`
+  const [deleteConfirmation, setDeleteConfirmation] = useState(null); // { cellKey, summarizerId }
+  const [hoveredSummarizerCard, setHoveredSummarizerCard] = useState(null); // Format: `${summarizer.id}`
+  const [deleteSummarizerConfirmation, setDeleteSummarizerConfirmation] = useState(null); // summarizer object
   
   // Combined View helpers
   const templates = ['general', 'followup', 'neurology', 'initial'];
@@ -91,8 +98,8 @@ const SummarizersVariablesView = ({
 
   const renderCellContent = (sectionKey, templateTab) => {
     if (configMode === 'summarizers') {
-      const summarizers = sectionSummarizers[sectionKey];
       const cellKey = `${sectionKey}-${templateTab}`;
+      const summarizers = sectionSummarizers[cellKey];
       const isDropdownOpen = cellSummarizerDropdown === cellKey;
       
       if (!summarizers || summarizers.length === 0) {
@@ -111,8 +118,20 @@ const SummarizersVariablesView = ({
             
             {isDropdownOpen && (
               <div
-                className="absolute top-full left-0 mt-1 w-80 bg-white rounded-lg shadow-xl border border-slate-200 py-2 z-50"
-                onClick={(e) => e.stopPropagation()}
+                className="fixed w-80 bg-white rounded-lg shadow-xl border border-slate-200 py-2"
+                style={{
+                  zIndex: 9999,
+                  top: '50%',
+                  left: '50%',
+                  transform: 'translate(-50%, -50%)'
+                }}
+                onMouseDown={(e) => {
+                  console.log('Dropdown mousedown!', e.target);
+                }}
+                onClick={(e) => {
+                  console.log('Dropdown container clicked!', e.target);
+                  e.stopPropagation();
+                }}
               >
                 {doctorSummarizers.length > 0 ? (
                   doctorSummarizers.map(summarizer => (
@@ -124,12 +143,12 @@ const SummarizersVariablesView = ({
                       <div className="grid grid-cols-3 gap-1.5 ml-7">
                         <button
                           type="button"
-                          onClick={(e) => {
+                          onMouseDown={(e) => {
                             e.preventDefault();
                             e.stopPropagation();
-                            console.log('Append clicked for summarizer:', summarizer.name, 'sectionKey:', sectionKey);
+                            console.log('Append clicked for summarizer:', summarizer.name, 'cellKey:', cellKey);
                             const newSummarizer = {
-                              id: `${summarizer.id}-${sectionKey}-${Date.now()}`,
+                              id: `${summarizer.id}-${cellKey}-${Date.now()}`,
                               type: 'summarizer',
                               name: summarizer.name,
                               bgColor: '#dbeafe',
@@ -141,7 +160,7 @@ const SummarizersVariablesView = ({
                             setSectionSummarizers(prev => {
                               const updated = {
                                 ...prev,
-                                [sectionKey]: [...(prev[sectionKey] || []), newSummarizer]
+                                [cellKey]: [...(prev[cellKey] || []), newSummarizer]
                               };
                               console.log('Updated sectionSummarizers:', updated);
                               return updated;
@@ -155,11 +174,11 @@ const SummarizersVariablesView = ({
                         </button>
                         <button
                           type="button"
-                          onClick={(e) => {
+                          onMouseDown={(e) => {
                             e.preventDefault();
                             e.stopPropagation();
                             const newSummarizer = {
-                              id: `${summarizer.id}-${sectionKey}-${Date.now()}`,
+                              id: `${summarizer.id}-${cellKey}-${Date.now()}`,
                               type: 'summarizer',
                               name: summarizer.name,
                               bgColor: '#dcfce7',
@@ -169,7 +188,7 @@ const SummarizersVariablesView = ({
                             };
                             setSectionSummarizers(prev => ({
                               ...prev,
-                              [sectionKey]: [...(prev[sectionKey] || []), newSummarizer]
+                              [cellKey]: [...(prev[cellKey] || []), newSummarizer]
                             }));
                             setCellSummarizerDropdown(null);
                           }}
@@ -180,17 +199,17 @@ const SummarizersVariablesView = ({
                         </button>
                         <button
                           type="button"
-                          onClick={(e) => {
+                          onMouseDown={(e) => {
                             e.preventDefault();
                             e.stopPropagation();
-                            const expandKey = `${summarizer.id}-${sectionKey}`;
-                            alert(`Inform clicked! expandKey: ${expandKey}`);
+                            const expandKey = `${summarizer.id}-${cellKey}`;
                             console.log('Inform clicked! Setting expandKey:', expandKey);
                             setInformPromptExpanded(expandKey);
                             setInformPromptText('');
                             console.log('State should be updated now');
                           }}
-                          className="px-2 py-1.5 bg-amber-50 hover:bg-amber-100 border border-amber-300 rounded text-xs font-medium text-amber-700 transition-colors flex items-center justify-center gap-1"
+                          className="px-2 py-1.5 bg-amber-50 hover:bg-amber-100 border border-amber-300 rounded text-xs font-medium text-amber-700 transition-colors flex items-center justify-center gap-1 cursor-pointer"
+                          style={{pointerEvents: 'auto', position: 'relative', zIndex: 10000}}
                         >
                           <span>💡</span>
                           <span>Inform</span>
@@ -199,10 +218,10 @@ const SummarizersVariablesView = ({
 
                       {/* Inline Inform Prompt Textbox */}
                       {(() => {
-                        const shouldShow = informPromptExpanded === `${summarizer.id}-${sectionKey}`;
+                        const shouldShow = informPromptExpanded === `${summarizer.id}-${cellKey}`;
                         console.log('Checking if should show inform prompt:', {
                           informPromptExpanded,
-                          expectedKey: `${summarizer.id}-${sectionKey}`,
+                          expectedKey: `${summarizer.id}-${cellKey}`,
                           shouldShow
                         });
                         return shouldShow;
@@ -222,11 +241,11 @@ const SummarizersVariablesView = ({
                           <div className="flex gap-2 mt-2">
                             <button
                               type="button"
-                              onClick={(e) => {
+                              onMouseDown={(e) => {
                                 e.preventDefault();
                                 e.stopPropagation();
                                 const newSummarizer = {
-                                  id: `${summarizer.id}-${sectionKey}-${Date.now()}`,
+                                  id: `${summarizer.id}-${cellKey}-${Date.now()}`,
                                   type: 'summarizer',
                                   name: summarizer.name,
                                   bgColor: '#fef3c7',
@@ -236,7 +255,7 @@ const SummarizersVariablesView = ({
                                 };
                                 setSectionSummarizers(prev => ({
                                   ...prev,
-                                  [sectionKey]: [...(prev[sectionKey] || []), newSummarizer]
+                                  [cellKey]: [...(prev[cellKey] || []), newSummarizer]
                                 }));
                                 setInformPromptExpanded(null);
                                 setInformPromptText('');
@@ -248,7 +267,7 @@ const SummarizersVariablesView = ({
                             </button>
                             <button
                               type="button"
-                              onClick={(e) => {
+                              onMouseDown={(e) => {
                                 e.preventDefault();
                                 e.stopPropagation();
                                 setInformPromptExpanded(null);
@@ -277,17 +296,34 @@ const SummarizersVariablesView = ({
         <div className="space-y-1 relative">
           {summarizers.map(sum => {
             const actionIcon = sum.action === 'append' ? '➕' : sum.action === 'prepend' ? '⬆️' : '💡';
+            const isHovered = hoveredBadge === sum.id;
             return (
               <div
                 key={sum.id}
-                onClick={() => onJumpToSection(templateTab, sectionKey)}
-                className="text-xs px-2 py-1 rounded hover:shadow-md transition-all cursor-pointer"
+                onMouseEnter={() => setHoveredBadge(sum.id)}
+                onMouseLeave={() => setHoveredBadge(null)}
+                className="text-xs px-2 py-1 rounded hover:shadow-md transition-all cursor-pointer relative flex items-center justify-between group"
                 style={{
                   background: sum.bgColor,
                   color: sum.color
                 }}
               >
-                {actionIcon} {sum.name}
+                <span onClick={() => onJumpToSection(templateTab, sectionKey)} className="flex-1">
+                  {actionIcon} {sum.name}
+                </span>
+                {isHovered && (
+                  <button
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      setDeleteConfirmation({ cellKey, summarizerId: sum.id });
+                    }}
+                    className="ml-2 p-0.5 hover:bg-red-100 rounded transition-colors"
+                    title="Delete this assignment"
+                  >
+                    <X className="w-3 h-3 text-red-600" />
+                  </button>
+                )}
               </div>
             );
           })}
@@ -304,8 +340,20 @@ const SummarizersVariablesView = ({
           
           {isDropdownOpen && (
             <div
-              className="absolute top-full left-0 mt-1 w-80 bg-white rounded-lg shadow-xl border border-slate-200 py-2 z-50"
-              onClick={(e) => e.stopPropagation()}
+              className="fixed w-80 bg-white rounded-lg shadow-xl border border-slate-200 py-2"
+              style={{
+                zIndex: 9999,
+                top: '50%',
+                left: '50%',
+                transform: 'translate(-50%, -50%)'
+              }}
+              onMouseDown={(e) => {
+                console.log('[SECOND DROPDOWN] Dropdown mousedown!', e.target);
+              }}
+              onClick={(e) => {
+                console.log('[SECOND DROPDOWN] Dropdown container clicked!', e.target);
+                e.stopPropagation();
+              }}
             >
               {doctorSummarizers.length > 0 ? (
                 doctorSummarizers.map(summarizer => (
@@ -317,11 +365,11 @@ const SummarizersVariablesView = ({
                     <div className="grid grid-cols-3 gap-1.5 ml-7">
                       <button
                         type="button"
-                        onClick={(e) => {
+                        onMouseDown={(e) => {
                           e.preventDefault();
                           e.stopPropagation();
                           const newSummarizer = {
-                            id: `${summarizer.id}-${sectionKey}-${Date.now()}`,
+                            id: `${summarizer.id}-${cellKey}-${Date.now()}`,
                             type: 'summarizer',
                             name: summarizer.name,
                             bgColor: '#dbeafe',
@@ -331,7 +379,7 @@ const SummarizersVariablesView = ({
                           };
                           setSectionSummarizers(prev => ({
                             ...prev,
-                            [sectionKey]: [...(prev[sectionKey] || []), newSummarizer]
+                            [cellKey]: [...(prev[cellKey] || []), newSummarizer]
                           }));
                           setCellSummarizerDropdown(null);
                         }}
@@ -342,11 +390,11 @@ const SummarizersVariablesView = ({
                       </button>
                       <button
                         type="button"
-                        onClick={(e) => {
+                        onMouseDown={(e) => {
                           e.preventDefault();
                           e.stopPropagation();
                           const newSummarizer = {
-                            id: `${summarizer.id}-${sectionKey}-${Date.now()}`,
+                            id: `${summarizer.id}-${cellKey}-${Date.now()}`,
                             type: 'summarizer',
                             name: summarizer.name,
                             bgColor: '#dcfce7',
@@ -356,7 +404,7 @@ const SummarizersVariablesView = ({
                           };
                           setSectionSummarizers(prev => ({
                             ...prev,
-                            [sectionKey]: [...(prev[sectionKey] || []), newSummarizer]
+                            [cellKey]: [...(prev[cellKey] || []), newSummarizer]
                           }));
                           setCellSummarizerDropdown(null);
                         }}
@@ -367,17 +415,17 @@ const SummarizersVariablesView = ({
                       </button>
                       <button
                         type="button"
-                        onClick={(e) => {
+                        onMouseDown={(e) => {
                           e.preventDefault();
                           e.stopPropagation();
-                          const expandKey = `${summarizer.id}-${sectionKey}`;
-                          alert(`[SECOND] Inform clicked! expandKey: ${expandKey}`);
+                          const expandKey = `${summarizer.id}-${cellKey}`;
                           console.log('[SECOND DROPDOWN] Inform clicked! Setting expandKey:', expandKey);
                           setInformPromptExpanded(expandKey);
                           setInformPromptText('');
                           console.log('[SECOND DROPDOWN] State should be updated now');
                         }}
                         className="px-2 py-1.5 bg-amber-50 hover:bg-amber-100 border border-amber-300 rounded text-xs font-medium text-amber-700 transition-colors flex items-center justify-center gap-1"
+                        style={{pointerEvents: 'auto', position: 'relative', zIndex: 10000}}
                       >
                         <span>💡</span>
                         <span>Inform</span>
@@ -386,10 +434,10 @@ const SummarizersVariablesView = ({
 
                     {/* Inline Inform Prompt Textbox */}
                     {(() => {
-                      const shouldShow = informPromptExpanded === `${summarizer.id}-${sectionKey}`;
+                      const shouldShow = informPromptExpanded === `${summarizer.id}-${cellKey}`;
                       console.log('[SECOND DROPDOWN] Checking if should show inform prompt:', {
                         informPromptExpanded,
-                        expectedKey: `${summarizer.id}-${sectionKey}`,
+                        expectedKey: `${summarizer.id}-${cellKey}`,
                         shouldShow
                       });
                       return shouldShow;
@@ -409,11 +457,11 @@ const SummarizersVariablesView = ({
                         <div className="flex gap-2 mt-2">
                           <button
                             type="button"
-                            onClick={(e) => {
+                            onMouseDown={(e) => {
                               e.preventDefault();
                               e.stopPropagation();
                               const newSummarizer = {
-                                id: `${summarizer.id}-${sectionKey}-${Date.now()}`,
+                                id: `${summarizer.id}-${cellKey}-${Date.now()}`,
                                 type: 'summarizer',
                                 name: summarizer.name,
                                 bgColor: '#fef3c7',
@@ -423,7 +471,7 @@ const SummarizersVariablesView = ({
                               };
                               setSectionSummarizers(prev => ({
                                 ...prev,
-                                [sectionKey]: [...(prev[sectionKey] || []), newSummarizer]
+                                [cellKey]: [...(prev[cellKey] || []), newSummarizer]
                               }));
                               setInformPromptExpanded(null);
                               setInformPromptText('');
@@ -435,7 +483,7 @@ const SummarizersVariablesView = ({
                           </button>
                           <button
                             type="button"
-                            onClick={(e) => {
+                            onMouseDown={(e) => {
                               e.preventDefault();
                               e.stopPropagation();
                               setInformPromptExpanded(null);
@@ -470,12 +518,12 @@ const SummarizersVariablesView = ({
 
   const handleAssignSummarizer = (assignData) => {
     const summarizer = doctorSummarizers.find(s => s.id === assignData.summarizerId);
-    
+
     if (!summarizer) {
       console.error('Summarizer not found:', assignData.summarizerId);
       return;
     }
-    
+
     const newSummarizer = {
       id: `${assignData.summarizerId}-${assignData.sectionKey}-${Date.now()}`,
       type: 'summarizer',
@@ -485,13 +533,69 @@ const SummarizersVariablesView = ({
       action: assignData.action,
       instructions: assignData.instructions || ''
     };
-    
+
     setSectionSummarizers(prev => ({
       ...prev,
       [assignData.sectionKey]: [...(prev[assignData.sectionKey] || []), newSummarizer]
     }));
-    
+
     setPromptEditModal(null);
+  };
+
+  const handleDeleteSummarizer = () => {
+    if (!deleteConfirmation) return;
+
+    const { cellKey, summarizerId } = deleteConfirmation;
+
+    setSectionSummarizers(prev => {
+      const cellSummarizers = prev[cellKey] || [];
+      const updatedSummarizers = cellSummarizers.filter(s => s.id !== summarizerId);
+
+      // If no summarizers left, remove the key entirely
+      if (updatedSummarizers.length === 0) {
+        const { [cellKey]: removed, ...rest } = prev;
+        return rest;
+      }
+
+      return {
+        ...prev,
+        [cellKey]: updatedSummarizers
+      };
+    });
+
+    setDeleteConfirmation(null);
+  };
+
+  const handleDeleteEntireSummarizer = () => {
+    if (!deleteSummarizerConfirmation) return;
+
+    const summarizerToDelete = deleteSummarizerConfirmation;
+
+    // Remove the summarizer from createdSummarizers
+    setCreatedSummarizers(prev => prev.filter(s => s.id !== summarizerToDelete.id));
+
+    // Remove all assignments of this summarizer from all cells
+    setSectionSummarizers(prev => {
+      const updated = { ...prev };
+
+      // Iterate through all cells and remove assignments that reference this summarizer
+      Object.keys(updated).forEach(cellKey => {
+        const cellSummarizers = updated[cellKey];
+        // Filter out any summarizer assignments that start with the deleted summarizer's id
+        const filteredSummarizers = cellSummarizers.filter(s => !s.id.startsWith(`${summarizerToDelete.id}-`));
+
+        if (filteredSummarizers.length === 0) {
+          // If no summarizers left in this cell, remove the cell key entirely
+          delete updated[cellKey];
+        } else {
+          updated[cellKey] = filteredSummarizers;
+        }
+      });
+
+      return updated;
+    });
+
+    setDeleteSummarizerConfirmation(null);
   };
 
   return (
@@ -540,24 +644,40 @@ const SummarizersVariablesView = ({
               </div>
               <div className="flex gap-3 flex-wrap mb-3">
                 {doctorSummarizers.length > 0 ? (
-                  doctorSummarizers.map(summarizer => (
-                    <div
-                      key={summarizer.id}
-                      className="px-4 py-2 bg-white border-2 border-blue-300 rounded-lg shadow-sm hover:shadow-md transition-all cursor-pointer"
-                      onClick={() => onEditSummarizer(summarizer.id)}
-                    >
-                      <div className="flex items-center gap-2">
-                        <span className="font-semibold text-slate-800">{summarizer.name}</span>
-                        <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
-                          summarizer.active !== false
-                            ? 'bg-green-100 text-green-700'
-                            : 'bg-slate-100 text-slate-600'
-                        }`}>
-                          {summarizer.active !== false ? 'Active' : 'Inactive'}
-                        </span>
+                  doctorSummarizers.map(summarizer => {
+                    const isHovered = hoveredSummarizerCard === summarizer.id;
+                    return (
+                      <div
+                        key={summarizer.id}
+                        className="relative px-4 py-2 bg-white border-2 border-blue-300 rounded-lg shadow-sm hover:shadow-md transition-all cursor-pointer"
+                        onMouseEnter={() => setHoveredSummarizerCard(summarizer.id)}
+                        onMouseLeave={() => setHoveredSummarizerCard(null)}
+                      >
+                        <div className="flex items-center gap-2" onClick={() => onEditSummarizer(summarizer.id)}>
+                          <span className="font-semibold text-slate-800">{summarizer.name}</span>
+                          <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+                            summarizer.active !== false
+                              ? 'bg-green-100 text-green-700'
+                              : 'bg-slate-100 text-slate-600'
+                          }`}>
+                            {summarizer.active !== false ? 'Active' : 'Inactive'}
+                          </span>
+                        </div>
+                        {isHovered && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setDeleteSummarizerConfirmation(summarizer);
+                            }}
+                            className="absolute -top-2 -right-2 w-6 h-6 bg-red-500 hover:bg-red-600 rounded-full flex items-center justify-center transition-colors shadow-md"
+                            title="Delete this summarizer and all its assignments"
+                          >
+                            <X className="w-4 h-4 text-white" />
+                          </button>
+                        )}
                       </div>
-                    </div>
-                  ))
+                    );
+                  })
                 ) : (
                   <p className="text-slate-500 text-sm">No summarizers created yet</p>
                 )}
@@ -595,7 +715,7 @@ const SummarizersVariablesView = ({
             </div>
 
             {/* Comprehensive Table */}
-            <div className="overflow-x-auto" style={{ maxHeight: '70vh' }}>
+            <div className="overflow-x-auto overflow-y-visible" style={{ maxHeight: '70vh' }}>
               <table className="w-full border-collapse">
                 <thead className="sticky top-0 z-10">
                   <tr>
@@ -753,6 +873,77 @@ const SummarizersVariablesView = ({
                     Add a new summarizer to extract and summarize data from EHR
                   </p>
                 </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Delete Assignment Confirmation Modal */}
+        {deleteConfirmation && (
+          <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+            <div className="bg-white rounded-2xl p-6 max-w-md w-full shadow-2xl">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center">
+                  <X className="w-6 h-6 text-red-600" />
+                </div>
+                <div>
+                  <h2 className="text-xl font-bold text-slate-800">Delete Assignment?</h2>
+                  <p className="text-sm text-slate-600">This action cannot be undone</p>
+                </div>
+              </div>
+              <p className="text-slate-600 mb-6">
+                Are you sure you want to remove this summarizer assignment from this cell?
+              </p>
+              <div className="flex gap-3 justify-end">
+                <button
+                  onClick={() => setDeleteConfirmation(null)}
+                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg font-medium transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleDeleteSummarizer}
+                  className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg font-medium transition-colors"
+                >
+                  Delete
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Delete Entire Summarizer Confirmation Modal */}
+        {deleteSummarizerConfirmation && (
+          <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+            <div className="bg-white rounded-2xl p-6 max-w-md w-full shadow-2xl">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center">
+                  <X className="w-6 h-6 text-red-600" />
+                </div>
+                <div>
+                  <h2 className="text-xl font-bold text-slate-800">Delete Summarizer?</h2>
+                  <p className="text-sm text-slate-600">This will remove all assignments</p>
+                </div>
+              </div>
+              <p className="text-slate-600 mb-2">
+                Are you sure you want to delete <strong>{deleteSummarizerConfirmation.name}</strong>?
+              </p>
+              <p className="text-slate-500 text-sm mb-6">
+                This will permanently remove the summarizer and all its assignments from all template sections. This action cannot be undone.
+              </p>
+              <div className="flex gap-3 justify-end">
+                <button
+                  onClick={() => setDeleteSummarizerConfirmation(null)}
+                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg font-medium transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleDeleteEntireSummarizer}
+                  className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg font-medium transition-colors"
+                >
+                  Delete Summarizer
+                </button>
               </div>
             </div>
           </div>

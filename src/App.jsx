@@ -2323,6 +2323,7 @@ const SummarizerPrototype = () => {
       <SummarizersVariablesView
         selectedDoctor={selectedDoctor}
         createdSummarizers={createdSummarizers}
+        setCreatedSummarizers={setCreatedSummarizers}
         configMode={configMode}
         setConfigMode={setConfigMode}
         sectionSummarizers={sectionSummarizers}
