@@ -20,12 +20,6 @@ export const EHR_RESOURCES = {
               yearsBack: 3,
               daysBackTo: 3
             }
-          },
-          {
-            id: 'count',
-            type: 'count',
-            label: 'Number of Notes',
-            required: false
           }
         ],
         advanced: [

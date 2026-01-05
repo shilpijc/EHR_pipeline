@@ -14,6 +14,8 @@ const SummarizersVariablesView = ({
   sectionSummarizers,
   setSectionSummarizers,
   customSections,
+  ghostSections,
+  setGhostSections,
   cellSummarizerDropdown,
   setCellSummarizerDropdown,
   pendingSummarizerSelection,
@@ -28,8 +30,7 @@ const SummarizersVariablesView = ({
   onEditSummarizer,
   onSelectCreateType,
   onJumpToSection,
-  onAddChildSection,
-  onAddParentSection
+  onAddNewSection
 }) => {
   const doctorSummarizers = createdSummarizers.filter(s => s.doctorId === selectedDoctor?.id);
 
@@ -53,6 +54,14 @@ const SummarizersVariablesView = ({
     followup: 'Follow-up',
     neurology: 'Neurology',
     initial: 'Initial Consultation'
+  };
+
+  // Abbreviations for combined view
+  const templateAbbreviations = {
+    general: 'GEN',
+    followup: 'FU',
+    neurology: 'NEURO',
+    initial: 'IC'
   };
 
   const getAllSections = () => {
@@ -95,6 +104,109 @@ const SummarizersVariablesView = ({
   };
 
   const allSections = getAllSections();
+
+  // Helper to check if a summarizer already has ANY action in a cell
+  const hasExistingAction = (cellKey, summarizerId) => {
+    const cellSummarizers = sectionSummarizers[cellKey] || [];
+    return cellSummarizers.some(s => s.id.startsWith(`${summarizerId}-`));
+  };
+
+  // Helper to get the existing action for a summarizer in a cell
+  const getExistingAction = (cellKey, summarizerId) => {
+    const cellSummarizers = sectionSummarizers[cellKey] || [];
+    const existing = cellSummarizers.find(s => s.id.startsWith(`${summarizerId}-`));
+    return existing ? existing.action : null;
+  };
+
+  // Helper to get the section name where a summarizer is being used
+  const getSectionName = (cellKey) => {
+    const [sectionKey] = cellKey.split('-');
+    const section = allSections.find(s => s.key === sectionKey);
+    return section ? section.name : 'this section';
+  };
+
+  // Helper to check if a summarizer is already appended/prepended in any other section
+  const hasSummarizerAppendPrependInOtherSection = (summarizerId, currentCellKey) => {
+    // Safety check: if sectionSummarizers is not available, return false
+    if (!sectionSummarizers || typeof sectionSummarizers !== 'object') {
+      return false;
+    }
+    
+    // Iterate through all cells in sectionSummarizers
+    for (const [cellKey, cellSummarizers] of Object.entries(sectionSummarizers)) {
+      // Skip the current cell
+      if (cellKey === currentCellKey) {
+        continue;
+      }
+      
+      // Safety check: ensure cellSummarizers is an array
+      if (!Array.isArray(cellSummarizers) || cellSummarizers.length === 0) {
+        continue;
+      }
+      
+      // Check if any summarizer in this cell matches the summarizerId and has append/prepend action
+      const hasAppendPrepend = cellSummarizers.some(s => {
+        // Safety check: ensure s is an object with id and action properties
+        if (!s || !s.id || !s.action) {
+          return false;
+        }
+        // Check if this summarizer assignment belongs to the given summarizer
+        const matchesSummarizer = s.id.startsWith(`${summarizerId}-`);
+        // Check if the action is append or prepend (ignore inform)
+        const isAppendPrepend = s.action === 'append' || s.action === 'prepend';
+        return matchesSummarizer && isAppendPrepend;
+      });
+      
+      if (hasAppendPrepend) {
+        console.log(`[Restriction] Summarizer ${summarizerId} already has append/prepend in cell ${cellKey}, blocking in ${currentCellKey}`);
+        return true;
+      }
+    }
+    
+    return false;
+  };
+
+  // Helper to get usage information for a summarizer in another section
+  const getSummarizerUsageInOtherSection = (summarizerId, currentCellKey) => {
+    // Safety check: if sectionSummarizers is not available, return null
+    if (!sectionSummarizers || typeof sectionSummarizers !== 'object') {
+      return null;
+    }
+    
+    // Iterate through all cells in sectionSummarizers
+    for (const [cellKey, cellSummarizers] of Object.entries(sectionSummarizers)) {
+      // Skip the current cell
+      if (cellKey === currentCellKey) {
+        continue;
+      }
+      
+      // Safety check: ensure cellSummarizers is an array
+      if (!Array.isArray(cellSummarizers) || cellSummarizers.length === 0) {
+        continue;
+      }
+      
+      // Find the summarizer assignment in this cell
+      const assignment = cellSummarizers.find(s => {
+        if (!s || !s.id || !s.action) {
+          return false;
+        }
+        return s.id.startsWith(`${summarizerId}-`);
+      });
+      
+      if (assignment) {
+        const [sectionKey] = cellKey.split('-');
+        const section = allSections.find(s => s.key === sectionKey);
+        const sectionName = section ? section.name : 'another section';
+        return {
+          cellKey,
+          action: assignment.action,
+          sectionName
+        };
+      }
+    }
+    
+    return null;
+  };
 
   const renderCellContent = (sectionKey, templateTab) => {
     if (configMode === 'summarizers') {
@@ -141,79 +253,257 @@ const SummarizersVariablesView = ({
                         <span className="font-medium text-slate-700 text-sm">{summarizer.name}</span>
                       </div>
                       <div className="grid grid-cols-3 gap-1.5 ml-7">
-                        <button
-                          type="button"
-                          onMouseDown={(e) => {
-                            e.preventDefault();
-                            e.stopPropagation();
-                            console.log('Append clicked for summarizer:', summarizer.name, 'cellKey:', cellKey);
-                            const newSummarizer = {
-                              id: `${summarizer.id}-${cellKey}-${Date.now()}`,
-                              type: 'summarizer',
-                              name: summarizer.name,
-                              bgColor: '#dbeafe',
-                              color: '#1e40af',
-                              action: 'append',
-                              instructions: ''
-                            };
-                            console.log('Creating new summarizer:', newSummarizer);
-                            setSectionSummarizers(prev => {
-                              const updated = {
-                                ...prev,
-                                [cellKey]: [...(prev[cellKey] || []), newSummarizer]
-                              };
-                              console.log('Updated sectionSummarizers:', updated);
-                              return updated;
-                            });
-                            setCellSummarizerDropdown(null);
-                          }}
-                          className="px-2 py-1.5 bg-blue-50 hover:bg-blue-100 border border-blue-300 rounded text-xs font-medium text-blue-700 transition-colors flex items-center justify-center gap-1"
-                        >
-                          <span>➕</span>
-                          <span>Append</span>
-                        </button>
-                        <button
-                          type="button"
-                          onMouseDown={(e) => {
-                            e.preventDefault();
-                            e.stopPropagation();
-                            const newSummarizer = {
-                              id: `${summarizer.id}-${cellKey}-${Date.now()}`,
-                              type: 'summarizer',
-                              name: summarizer.name,
-                              bgColor: '#dcfce7',
-                              color: '#166534',
-                              action: 'prepend',
-                              instructions: ''
-                            };
-                            setSectionSummarizers(prev => ({
-                              ...prev,
-                              [cellKey]: [...(prev[cellKey] || []), newSummarizer]
-                            }));
-                            setCellSummarizerDropdown(null);
-                          }}
-                          className="px-2 py-1.5 bg-green-50 hover:bg-green-100 border border-green-300 rounded text-xs font-medium text-green-700 transition-colors flex items-center justify-center gap-1"
-                        >
-                          <span>⬆️</span>
-                          <span>Prepend</span>
-                        </button>
-                        <button
-                          type="button"
-                          onMouseDown={(e) => {
-                            e.preventDefault();
-                            e.stopPropagation();
-                            const expandKey = `${summarizer.id}-${cellKey}`;
-                            console.log('Inform clicked! Setting expandKey:', expandKey);
-                            setInformPromptExpanded(expandKey);
-                            setInformPromptText('');
-                            console.log('State should be updated now');
-                          }}
-                          className="px-2 py-1.5 bg-amber-50 hover:bg-amber-100 border border-amber-300 rounded text-xs font-medium text-amber-700 transition-colors flex items-center justify-center gap-1 cursor-pointer"
-                          style={{pointerEvents: 'auto', position: 'relative', zIndex: 10000}}
-                        >
-                          <span>💡</span>
-                          <span>Inform</span>
-                        </button>
+                        {(() => {
+                          const hasExisting = hasExistingAction(cellKey, summarizer.id);
+                          const hasInOtherSection = hasSummarizerAppendPrependInOtherSection(summarizer.id, cellKey);
+                          const existingAction = getExistingAction(cellKey, summarizer.id);
+                          const sectionName = getSectionName(cellKey);
+                          const usageInOtherSection = getSummarizerUsageInOtherSection(summarizer.id, cellKey);
+                          
+                          // Check if this is the selected action
+                          const isSelected = existingAction === 'append';
+                          const isDisabled = hasExisting || hasInOtherSection;
+                          
+                          // Determine button text
+                          let buttonText = 'Append';
+                          if (isSelected) {
+                            buttonText = 'Append (Selected)';
+                          } else if (hasInOtherSection && usageInOtherSection) {
+                            buttonText = 'Already Used';
+                          } else if (hasExisting) {
+                            buttonText = 'Already Used';
+                          }
+                          
+                          // Determine tooltip text
+                          let tooltipText = 'Append to section';
+                          if (hasExisting) {
+                            tooltipText = `Already appending to ${sectionName}`;
+                          } else if (hasInOtherSection && usageInOtherSection) {
+                            const otherActionLabel = usageInOtherSection.action === 'append' ? 'appending' : 'prepending';
+                            tooltipText = `Already ${otherActionLabel} in ${usageInOtherSection.sectionName}`;
+                          }
+                          
+                          // Determine button styling
+                          let buttonClassName = 'px-2 py-1.5 border rounded text-xs font-medium transition-colors flex items-center justify-center gap-1 ';
+                          if (isSelected) {
+                            buttonClassName += 'bg-blue-100 border-blue-400 text-blue-800 cursor-default';
+                          } else if (isDisabled) {
+                            buttonClassName += 'bg-slate-100 border-slate-300 text-slate-400 cursor-not-allowed';
+                          } else {
+                            buttonClassName += 'bg-blue-50 hover:bg-blue-100 border-blue-300 text-blue-700';
+                          }
+                          
+                          return (
+                            <button
+                              type="button"
+                              disabled={isDisabled}
+                              onMouseDown={(e) => {
+                                if (isDisabled) {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  return;
+                                }
+                                // Double-check before adding (in case state changed)
+                                if (hasExistingAction(cellKey, summarizer.id) || 
+                                    hasSummarizerAppendPrependInOtherSection(summarizer.id, cellKey)) {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  return;
+                                }
+                                e.preventDefault();
+                                e.stopPropagation();
+                                console.log('Append clicked for summarizer:', summarizer.name, 'cellKey:', cellKey);
+                                const newSummarizer = {
+                                  id: `${summarizer.id}-${cellKey}-${Date.now()}`,
+                                  type: 'summarizer',
+                                  name: summarizer.name,
+                                  bgColor: '#dbeafe',
+                                  color: '#1e40af',
+                                  action: 'append',
+                                  instructions: ''
+                                };
+                                console.log('Creating new summarizer:', newSummarizer);
+                                setSectionSummarizers(prev => {
+                                  const updated = {
+                                    ...prev,
+                                    [cellKey]: [...(prev[cellKey] || []), newSummarizer]
+                                  };
+                                  console.log('Updated sectionSummarizers:', updated);
+                                  return updated;
+                                });
+
+                                // Remove from ghost sections if this is the first summarizer
+                                const [sectionKey] = cellKey.split('-');
+                                if (ghostSections && ghostSections[sectionKey]) {
+                                  setGhostSections(prev => {
+                                    const { [sectionKey]: removed, ...rest } = prev;
+                                    return rest;
+                                  });
+                                }
+
+                                setCellSummarizerDropdown(null);
+                              }}
+                              className={buttonClassName}
+                              title={tooltipText}
+                            >
+                              <span>➕</span>
+                              <span>{buttonText}</span>
+                            </button>
+                          );
+                        })()}
+                        {(() => {
+                          const hasExisting = hasExistingAction(cellKey, summarizer.id);
+                          const hasInOtherSection = hasSummarizerAppendPrependInOtherSection(summarizer.id, cellKey);
+                          const existingAction = getExistingAction(cellKey, summarizer.id);
+                          const sectionName = getSectionName(cellKey);
+                          const usageInOtherSection = getSummarizerUsageInOtherSection(summarizer.id, cellKey);
+                          
+                          // Check if this is the selected action
+                          const isSelected = existingAction === 'prepend';
+                          const isDisabled = hasExisting || hasInOtherSection;
+                          
+                          // Determine button text
+                          let buttonText = 'Prepend';
+                          if (isSelected) {
+                            buttonText = 'Prepend (Selected)';
+                          } else if (hasInOtherSection && usageInOtherSection) {
+                            buttonText = 'Already Used';
+                          } else if (hasExisting) {
+                            buttonText = 'Already Used';
+                          }
+                          
+                          // Determine tooltip text
+                          let tooltipText = 'Prepend to section';
+                          if (hasExisting) {
+                            tooltipText = `Already prepending to ${sectionName}`;
+                          } else if (hasInOtherSection && usageInOtherSection) {
+                            const otherActionLabel = usageInOtherSection.action === 'append' ? 'appending' : 'prepending';
+                            tooltipText = `Already ${otherActionLabel} in ${usageInOtherSection.sectionName}`;
+                          }
+                          
+                          // Determine button styling
+                          let buttonClassName = 'px-2 py-1.5 border rounded text-xs font-medium transition-colors flex items-center justify-center gap-1 ';
+                          if (isSelected) {
+                            buttonClassName += 'bg-green-100 border-green-400 text-green-800 cursor-default';
+                          } else if (isDisabled) {
+                            buttonClassName += 'bg-slate-100 border-slate-300 text-slate-400 cursor-not-allowed';
+                          } else {
+                            buttonClassName += 'bg-green-50 hover:bg-green-100 border-green-300 text-green-700';
+                          }
+                          
+                          return (
+                            <button
+                              type="button"
+                              disabled={isDisabled}
+                              onMouseDown={(e) => {
+                                if (isDisabled) {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  return;
+                                }
+                                // Double-check before adding (in case state changed)
+                                if (hasExistingAction(cellKey, summarizer.id) || 
+                                    hasSummarizerAppendPrependInOtherSection(summarizer.id, cellKey)) {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  return;
+                                }
+                                e.preventDefault();
+                                e.stopPropagation();
+                                const newSummarizer = {
+                                  id: `${summarizer.id}-${cellKey}-${Date.now()}`,
+                                  type: 'summarizer',
+                                  name: summarizer.name,
+                                  bgColor: '#dcfce7',
+                                  color: '#166534',
+                                  action: 'prepend',
+                                  instructions: ''
+                                };
+                                setSectionSummarizers(prev => ({
+                                  ...prev,
+                                  [cellKey]: [...(prev[cellKey] || []), newSummarizer]
+                                }));
+
+                                // Remove from ghost sections if this is the first summarizer
+                                const [sectionKey] = cellKey.split('-');
+                                if (ghostSections && ghostSections[sectionKey]) {
+                                  setGhostSections(prev => {
+                                    const { [sectionKey]: removed, ...rest } = prev;
+                                    return rest;
+                                  });
+                                }
+
+                                setCellSummarizerDropdown(null);
+                              }}
+                              className={buttonClassName}
+                              title={tooltipText}
+                            >
+                              <span>⬆️</span>
+                              <span>{buttonText}</span>
+                            </button>
+                          );
+                        })()}
+                        {(() => {
+                          const hasExisting = hasExistingAction(cellKey, summarizer.id);
+                          const existingAction = getExistingAction(cellKey, summarizer.id);
+                          const sectionName = getSectionName(cellKey);
+                          
+                          // Check if this is the selected action
+                          const isSelected = existingAction === 'inform';
+                          const isDisabled = hasExisting;
+                          
+                          // Determine button text
+                          let buttonText = 'Inform';
+                          if (isSelected) {
+                            buttonText = 'Inform (Selected)';
+                          } else if (hasExisting) {
+                            buttonText = 'Already Used';
+                          }
+                          
+                          // Determine tooltip text
+                          let tooltipText = 'Inform context';
+                          if (hasExisting) {
+                            const actionLabel = existingAction === 'append' ? 'appending' : existingAction === 'prepend' ? 'prepending' : 'informing';
+                            tooltipText = `Already ${actionLabel} to ${sectionName}`;
+                          }
+                          
+                          // Determine button styling
+                          let buttonClassName = 'px-2 py-1.5 border rounded text-xs font-medium transition-colors flex items-center justify-center gap-1 ';
+                          if (isSelected) {
+                            buttonClassName += 'bg-amber-100 border-amber-400 text-amber-800 cursor-default';
+                          } else if (isDisabled) {
+                            buttonClassName += 'bg-slate-100 border-slate-300 text-slate-400 cursor-not-allowed';
+                          } else {
+                            buttonClassName += 'bg-amber-50 hover:bg-amber-100 border-amber-300 text-amber-700 cursor-pointer';
+                          }
+                          
+                          return (
+                            <button
+                              type="button"
+                              disabled={isDisabled}
+                              onMouseDown={(e) => {
+                                if (isDisabled) {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  return;
+                                }
+                                e.preventDefault();
+                                e.stopPropagation();
+                                const expandKey = `${summarizer.id}-${cellKey}`;
+                                console.log('Inform clicked! Setting expandKey:', expandKey);
+                                setInformPromptExpanded(expandKey);
+                                setInformPromptText('');
+                                console.log('State should be updated now');
+                              }}
+                              className={buttonClassName}
+                              style={{pointerEvents: 'auto', position: 'relative', zIndex: 10000}}
+                              title={tooltipText}
+                            >
+                              <span>💡</span>
+                              <span>{buttonText}</span>
+                            </button>
+                          );
+                        })()}
                       </div>
 
                       {/* Inline Inform Prompt Textbox */}
@@ -257,6 +547,16 @@ const SummarizersVariablesView = ({
                                   ...prev,
                                   [cellKey]: [...(prev[cellKey] || []), newSummarizer]
                                 }));
+
+                                // Remove from ghost sections if this is the first summarizer
+                                const [sectionKey] = cellKey.split('-');
+                                if (ghostSections && ghostSections[sectionKey]) {
+                                  setGhostSections(prev => {
+                                    const { [sectionKey]: removed, ...rest } = prev;
+                                    return rest;
+                                  });
+                                }
+
                                 setInformPromptExpanded(null);
                                 setInformPromptText('');
                                 setCellSummarizerDropdown(null);
@@ -363,73 +663,241 @@ const SummarizersVariablesView = ({
                       <span className="font-medium text-slate-700 text-sm">{summarizer.name}</span>
                     </div>
                     <div className="grid grid-cols-3 gap-1.5 ml-7">
-                      <button
-                        type="button"
-                        onMouseDown={(e) => {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          const newSummarizer = {
-                            id: `${summarizer.id}-${cellKey}-${Date.now()}`,
-                            type: 'summarizer',
-                            name: summarizer.name,
-                            bgColor: '#dbeafe',
-                            color: '#1e40af',
-                            action: 'append',
-                            instructions: ''
-                          };
-                          setSectionSummarizers(prev => ({
-                            ...prev,
-                            [cellKey]: [...(prev[cellKey] || []), newSummarizer]
-                          }));
-                          setCellSummarizerDropdown(null);
-                        }}
-                        className="px-2 py-1.5 bg-blue-50 hover:bg-blue-100 border border-blue-300 rounded text-xs font-medium text-blue-700 transition-colors flex items-center justify-center gap-1"
-                      >
-                        <span>➕</span>
-                        <span>Append</span>
-                      </button>
-                      <button
-                        type="button"
-                        onMouseDown={(e) => {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          const newSummarizer = {
-                            id: `${summarizer.id}-${cellKey}-${Date.now()}`,
-                            type: 'summarizer',
-                            name: summarizer.name,
-                            bgColor: '#dcfce7',
-                            color: '#166534',
-                            action: 'prepend',
-                            instructions: ''
-                          };
-                          setSectionSummarizers(prev => ({
-                            ...prev,
-                            [cellKey]: [...(prev[cellKey] || []), newSummarizer]
-                          }));
-                          setCellSummarizerDropdown(null);
-                        }}
-                        className="px-2 py-1.5 bg-green-50 hover:bg-green-100 border border-green-300 rounded text-xs font-medium text-green-700 transition-colors flex items-center justify-center gap-1"
-                      >
-                        <span>⬆️</span>
-                        <span>Prepend</span>
-                      </button>
-                      <button
-                        type="button"
-                        onMouseDown={(e) => {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          const expandKey = `${summarizer.id}-${cellKey}`;
-                          console.log('[SECOND DROPDOWN] Inform clicked! Setting expandKey:', expandKey);
-                          setInformPromptExpanded(expandKey);
-                          setInformPromptText('');
-                          console.log('[SECOND DROPDOWN] State should be updated now');
-                        }}
-                        className="px-2 py-1.5 bg-amber-50 hover:bg-amber-100 border border-amber-300 rounded text-xs font-medium text-amber-700 transition-colors flex items-center justify-center gap-1"
-                        style={{pointerEvents: 'auto', position: 'relative', zIndex: 10000}}
-                      >
-                        <span>💡</span>
-                        <span>Inform</span>
-                      </button>
+                      {(() => {
+                        const hasExisting = hasExistingAction(cellKey, summarizer.id);
+                        const hasInOtherSection = hasSummarizerAppendPrependInOtherSection(summarizer.id, cellKey);
+                        const existingAction = getExistingAction(cellKey, summarizer.id);
+                        const sectionName = getSectionName(cellKey);
+                        const usageInOtherSection = getSummarizerUsageInOtherSection(summarizer.id, cellKey);
+                        
+                        // Check if this is the selected action
+                        const isSelected = existingAction === 'append';
+                        const isDisabled = hasExisting || hasInOtherSection;
+                        
+                        // Determine button text
+                        let buttonText = 'Append';
+                        if (isSelected) {
+                          buttonText = 'Append (Selected)';
+                        } else if (hasInOtherSection && usageInOtherSection) {
+                          buttonText = 'Already Used';
+                        } else if (hasExisting) {
+                          buttonText = 'Already Used';
+                        }
+                        
+                        // Determine tooltip text
+                        let tooltipText = 'Append to section';
+                        if (hasExisting) {
+                          tooltipText = `Already appending to ${sectionName}`;
+                        } else if (hasInOtherSection && usageInOtherSection) {
+                          const otherActionLabel = usageInOtherSection.action === 'append' ? 'appending' : 'prepending';
+                          tooltipText = `Already ${otherActionLabel} in ${usageInOtherSection.sectionName}`;
+                        }
+                        
+                        // Determine button styling
+                        let buttonClassName = 'px-2 py-1.5 border rounded text-xs font-medium transition-colors flex items-center justify-center gap-1 ';
+                        if (isSelected) {
+                          buttonClassName += 'bg-blue-100 border-blue-400 text-blue-800 cursor-default';
+                        } else if (isDisabled) {
+                          buttonClassName += 'bg-slate-100 border-slate-300 text-slate-400 cursor-not-allowed';
+                        } else {
+                          buttonClassName += 'bg-blue-50 hover:bg-blue-100 border-blue-300 text-blue-700';
+                        }
+                        
+                        return (
+                          <button
+                            type="button"
+                            disabled={isDisabled}
+                            onMouseDown={(e) => {
+                              if (isDisabled) {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                return;
+                              }
+                              // Double-check before adding (in case state changed)
+                              if (hasExistingAction(cellKey, summarizer.id) || 
+                                  hasSummarizerAppendPrependInOtherSection(summarizer.id, cellKey)) {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                return;
+                              }
+                              e.preventDefault();
+                              e.stopPropagation();
+                              const newSummarizer = {
+                                id: `${summarizer.id}-${cellKey}-${Date.now()}`,
+                                type: 'summarizer',
+                                name: summarizer.name,
+                                bgColor: '#dbeafe',
+                                color: '#1e40af',
+                                action: 'append',
+                                instructions: ''
+                              };
+                              setSectionSummarizers(prev => ({
+                                ...prev,
+                                [cellKey]: [...(prev[cellKey] || []), newSummarizer]
+                              }));
+                              setCellSummarizerDropdown(null);
+                            }}
+                            className={buttonClassName}
+                            title={tooltipText}
+                          >
+                            <span>➕</span>
+                            <span>{buttonText}</span>
+                          </button>
+                        );
+                      })()}
+                      {(() => {
+                        const hasExisting = hasExistingAction(cellKey, summarizer.id);
+                        const hasInOtherSection = hasSummarizerAppendPrependInOtherSection(summarizer.id, cellKey);
+                        const existingAction = getExistingAction(cellKey, summarizer.id);
+                        const sectionName = getSectionName(cellKey);
+                        const usageInOtherSection = getSummarizerUsageInOtherSection(summarizer.id, cellKey);
+                        
+                        // Check if this is the selected action
+                        const isSelected = existingAction === 'prepend';
+                        const isDisabled = hasExisting || hasInOtherSection;
+                        
+                        // Determine button text
+                        let buttonText = 'Prepend';
+                        if (isSelected) {
+                          buttonText = 'Prepend (Selected)';
+                        } else if (hasInOtherSection && usageInOtherSection) {
+                          buttonText = 'Already Used';
+                        } else if (hasExisting) {
+                          buttonText = 'Already Used';
+                        }
+                        
+                        // Determine tooltip text
+                        let tooltipText = 'Prepend to section';
+                        if (hasExisting) {
+                          tooltipText = `Already prepending to ${sectionName}`;
+                        } else if (hasInOtherSection && usageInOtherSection) {
+                          const otherActionLabel = usageInOtherSection.action === 'append' ? 'appending' : 'prepending';
+                          tooltipText = `Already ${otherActionLabel} in ${usageInOtherSection.sectionName}`;
+                        }
+                        
+                        // Determine button styling
+                        let buttonClassName = 'px-2 py-1.5 border rounded text-xs font-medium transition-colors flex items-center justify-center gap-1 ';
+                        if (isSelected) {
+                          buttonClassName += 'bg-green-100 border-green-400 text-green-800 cursor-default';
+                        } else if (isDisabled) {
+                          buttonClassName += 'bg-slate-100 border-slate-300 text-slate-400 cursor-not-allowed';
+                        } else {
+                          buttonClassName += 'bg-green-50 hover:bg-green-100 border-green-300 text-green-700';
+                        }
+                        
+                        return (
+                          <button
+                            type="button"
+                            disabled={isDisabled}
+                            onMouseDown={(e) => {
+                              if (isDisabled) {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                return;
+                              }
+                              // Double-check before adding (in case state changed)
+                              if (hasExistingAction(cellKey, summarizer.id) || 
+                                  hasSummarizerAppendPrependInOtherSection(summarizer.id, cellKey)) {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                return;
+                              }
+                              e.preventDefault();
+                              e.stopPropagation();
+                              const newSummarizer = {
+                                id: `${summarizer.id}-${cellKey}-${Date.now()}`,
+                                type: 'summarizer',
+                                name: summarizer.name,
+                                bgColor: '#dcfce7',
+                                color: '#166534',
+                                action: 'prepend',
+                                instructions: ''
+                              };
+                              setSectionSummarizers(prev => ({
+                                ...prev,
+                                [cellKey]: [...(prev[cellKey] || []), newSummarizer]
+                              }));
+
+                              // Remove from ghost sections if this is the first summarizer
+                              const [sectionKey] = cellKey.split('-');
+                              if (ghostSections && ghostSections[sectionKey]) {
+                                setGhostSections(prev => {
+                                  const { [sectionKey]: removed, ...rest } = prev;
+                                  return rest;
+                                });
+                              }
+
+                              setCellSummarizerDropdown(null);
+                            }}
+                            className={buttonClassName}
+                            title={tooltipText}
+                          >
+                            <span>⬆️</span>
+                            <span>{buttonText}</span>
+                          </button>
+                        );
+                      })()}
+                      {(() => {
+                        const hasExisting = hasExistingAction(cellKey, summarizer.id);
+                        const existingAction = getExistingAction(cellKey, summarizer.id);
+                        const sectionName = getSectionName(cellKey);
+                        
+                        // Check if this is the selected action
+                        const isSelected = existingAction === 'inform';
+                        const isDisabled = hasExisting;
+                        
+                        // Determine button text
+                        let buttonText = 'Inform';
+                        if (isSelected) {
+                          buttonText = 'Inform (Selected)';
+                        } else if (hasExisting) {
+                          buttonText = 'Already Used';
+                        }
+                        
+                        // Determine tooltip text
+                        let tooltipText = 'Inform context';
+                        if (hasExisting) {
+                          const actionLabel = existingAction === 'append' ? 'appending' : existingAction === 'prepend' ? 'prepending' : 'informing';
+                          tooltipText = `Already ${actionLabel} to ${sectionName}`;
+                        }
+                        
+                        // Determine button styling
+                        let buttonClassName = 'px-2 py-1.5 border rounded text-xs font-medium transition-colors flex items-center justify-center gap-1 ';
+                        if (isSelected) {
+                          buttonClassName += 'bg-amber-100 border-amber-400 text-amber-800 cursor-default';
+                        } else if (isDisabled) {
+                          buttonClassName += 'bg-slate-100 border-slate-300 text-slate-400 cursor-not-allowed';
+                        } else {
+                          buttonClassName += 'bg-amber-50 hover:bg-amber-100 border-amber-300 text-amber-700';
+                        }
+                        
+                        return (
+                          <button
+                            type="button"
+                            disabled={isDisabled}
+                            onMouseDown={(e) => {
+                              if (isDisabled) {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                return;
+                              }
+                              e.preventDefault();
+                              e.stopPropagation();
+                              const expandKey = `${summarizer.id}-${cellKey}`;
+                              console.log('[SECOND DROPDOWN] Inform clicked! Setting expandKey:', expandKey);
+                              setInformPromptExpanded(expandKey);
+                              setInformPromptText('');
+                              console.log('[SECOND DROPDOWN] State should be updated now');
+                            }}
+                            className={buttonClassName}
+                            style={{pointerEvents: 'auto', position: 'relative', zIndex: 10000}}
+                            title={tooltipText}
+                          >
+                            <span>💡</span>
+                            <span>{buttonText}</span>
+                          </button>
+                        );
+                      })()}
                     </div>
 
                     {/* Inline Inform Prompt Textbox */}
@@ -473,6 +941,16 @@ const SummarizersVariablesView = ({
                                 ...prev,
                                 [cellKey]: [...(prev[cellKey] || []), newSummarizer]
                               }));
+
+                              // Remove from ghost sections if this is the first summarizer
+                              const [sectionKey] = cellKey.split('-');
+                              if (ghostSections && ghostSections[sectionKey]) {
+                                setGhostSections(prev => {
+                                  const { [sectionKey]: removed, ...rest } = prev;
+                                  return rest;
+                                });
+                              }
+
                               setInformPromptExpanded(null);
                               setInformPromptText('');
                               setCellSummarizerDropdown(null);
@@ -702,13 +1180,13 @@ const SummarizersVariablesView = ({
                     Summarizers
                   </button>
                 </div>
-                {onAddParentSection && (
+                {onAddNewSection && (
                   <button
-                    onClick={onAddParentSection}
+                    onClick={onAddNewSection}
                     className="px-4 py-2 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white rounded-lg text-sm font-medium flex items-center gap-2 transition-all duration-200 shadow-sm hover:shadow-md"
                   >
                     <Plus className="w-4 h-4" />
-                    New Parent Section
+                    Add New Section
                   </button>
                 )}
               </div>
@@ -726,13 +1204,14 @@ const SummarizersVariablesView = ({
                       <th
                         key={template}
                         className={`text-white px-4 py-4 text-center font-semibold border-r-2 border-white ${
-                          configMode === 'summarizers' 
-                            ? 'bg-gradient-to-r from-blue-600 to-indigo-600' 
+                          configMode === 'summarizers'
+                            ? 'bg-gradient-to-r from-blue-600 to-indigo-600'
                             : 'bg-gradient-to-r from-purple-600 to-pink-600'
                         }`}
                         style={{ minWidth: '200px' }}
+                        title={templateNames[template]}
                       >
-                        {templateNames[template]}
+                        {templateAbbreviations[template]}
                       </th>
                     ))}
                   </tr>
@@ -740,6 +1219,9 @@ const SummarizersVariablesView = ({
                 <tbody>
                   {/* Regular template sections */}
                   {allSections.map((section) => {
+                    // Check if this is a ghost section
+                    const isGhost = ghostSections && ghostSections[section.key];
+
                     let bgColor = 'bg-white';
                     let textColor = 'text-slate-900';
                     let paddingLeft = 'pl-6';
@@ -763,38 +1245,22 @@ const SummarizersVariablesView = ({
                       fontSize = 'text-sm';
                     }
 
+                    // Apply ghost section styling
+                    if (isGhost) {
+                      bgColor = 'bg-slate-100/50';
+                      textColor = 'text-slate-400';
+                    }
+
                     return (
                       <tr
                         key={section.key}
-                        className={`border-b border-slate-200 hover:bg-slate-50/50 transition-colors ${bgColor}`}
+                        className={`border-b border-slate-200 hover:bg-slate-50/50 transition-colors ${bgColor} ${isGhost ? 'opacity-60' : ''}`}
                         onMouseEnter={() => setHoveredSection(section.key)}
                         onMouseLeave={() => setHoveredSection(null)}
                       >
                         <td className={`${paddingLeft} py-3 ${textColor} ${fontWeight} ${fontSize} border-r-2 border-slate-200 relative`}>
                           <div className="flex items-center gap-2">
-                            <span>{section.name}</span>
-                            {/* Show Add Child button on hover for parent and child sections (not grandchild) */}
-                            {hoveredSection === section.key && section.level !== 'grandchild' && onAddChildSection && (
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  const childName = prompt(`Enter name for new child section under "${section.name}":`);
-                                  if (childName && childName.trim()) {
-                                    onAddChildSection({
-                                      parentKey: section.level === 'parent' ? section.key : section.parentKey,
-                                      childKey: section.level === 'child' ? section.key : null,
-                                      level: section.level === 'parent' ? 'child' : 'grandchild',
-                                      name: childName.trim()
-                                    });
-                                  }
-                                }}
-                                className="text-xs px-2 py-1 bg-green-500 hover:bg-green-600 text-white rounded flex items-center gap-1 transition-colors shadow-md"
-                                title="Add child section"
-                              >
-                                <Plus className="w-3 h-3" />
-                                <span>Add Child</span>
-                              </button>
-                            )}
+                            <span>{section.name}{isGhost && <span className="ml-2 text-xs text-slate-400 italic">(no summarizers yet)</span>}</span>
                           </div>
                         </td>
                         {templates.map(template => (

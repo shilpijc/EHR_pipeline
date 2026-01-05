@@ -9,5 +9,7 @@ export {
   getAllEhrNames
 } from './ehrResources';
 
+export { getDependenciesForDocumentType } from './resourceDependencies';
+
 export { resourceSections } from './resourceSections';
 export { templateHierarchy } from './templateHierarchy';

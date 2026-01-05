@@ -1,6 +1,20 @@
-import React, { useState } from 'react';
-import { ChevronRight, Users, Copy, CheckCircle, AlertCircle, X, Search, Filter } from 'lucide-react';
-import { getResourcesForEhr, formatResourceOption } from '../config';
+import React from 'react';
+import { ChevronRight, Copy } from 'lucide-react';
+import { useBulkTransfer } from './BulkTransfer/useBulkTransfer';
+import {
+  needsResourceMapping,
+  prepareResourceMappings,
+  parseEmailInput,
+  findDoctorsByEmails,
+  validateCopyOperation,
+  filterDoctors
+} from './BulkTransfer/bulkTransferHelpers';
+import ResourceMappingModal from './BulkTransfer/ResourceMappingModal';
+import ExecutionProgress from './BulkTransfer/ExecutionProgress';
+import DoctorSelectionPanel from './BulkTransfer/DoctorSelectionPanel';
+import CopyTypeSelector from './BulkTransfer/CopyTypeSelector';
+import SummarizerSelection from './BulkTransfer/SummarizerSelection';
+import ReviewSection from './BulkTransfer/ReviewSection';
 
 const BulkTransferPage = ({ 
   doctors, 
@@ -9,231 +23,104 @@ const BulkTransferPage = ({
   onExecuteCopy,
   maskEmail 
 }) => {
-  // State management
-  const [selectedSourceDoctors, setSelectedSourceDoctors] = useState([]);
-  const [selectedTargetDoctors, setSelectedTargetDoctors] = useState([]);
-  const [copyType, setCopyType] = useState('summarizers'); // 'summarizers', 'full', 'templates'
-  const [selectedSummarizers, setSelectedSummarizers] = useState([]);
-  const [targetEHR, setTargetEHR] = useState('');
-  const [targetEmails, setTargetEmails] = useState('');
-  const [searchTerm, setSearchTerm] = useState('');
-  const [ehrFilter, setEhrFilter] = useState('all');
-  const [showResourceMapping, setShowResourceMapping] = useState(false);
-  const [resourceMappings, setResourceMappings] = useState({});
-  const [isExecuting, setIsExecuting] = useState(false);
-  const [executionProgress, setExecutionProgress] = useState(null);
+  const [state, actions] = useBulkTransfer();
 
-  // Get unique EHR systems
+  // Computed values
   const uniqueEHRs = [...new Set(doctors.map(d => d.ehr))];
-
-  // Filter doctors based on search and EHR filter
-  const filteredDoctors = doctors.filter(doctor => {
-    const matchesSearch = doctor.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
-                         doctor.email.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesEHR = ehrFilter === 'all' || doctor.ehr === ehrFilter;
-    return matchesSearch && matchesEHR;
-  });
-
-  // Get summarizers for selected source doctors
+  const filteredDoctors = filterDoctors(doctors, state.searchTerm, state.ehrFilter);
   const availableSummarizers = createdSummarizers.filter(s => 
-    selectedSourceDoctors.includes(s.doctorId)
+    state.selectedSourceDoctors.includes(s.doctorId)
   );
 
-  // Toggle source doctor selection
-  const toggleSourceDoctor = (doctorId) => {
-    setSelectedSourceDoctors(prev => {
-      if (prev.includes(doctorId)) {
-        return prev.filter(id => id !== doctorId);
-      } else {
-        return [...prev, doctorId];
-      }
-    });
-    // Clear selected summarizers when source changes
-    if (!selectedSourceDoctors.includes(doctorId)) {
-      setSelectedSummarizers([]);
-    }
-  };
-
-  // Toggle target doctor selection
-  const toggleTargetDoctor = (doctorId) => {
-    setSelectedTargetDoctors(prev => {
-      if (prev.includes(doctorId)) {
-        return prev.filter(id => id !== doctorId);
-      } else {
-        return [...prev, doctorId];
-      }
-    });
-  };
-
-  // Toggle summarizer selection
-  const toggleSummarizer = (summarizerId) => {
-    setSelectedSummarizers(prev => {
-      if (prev.includes(summarizerId)) {
-        return prev.filter(id => id !== summarizerId);
-      } else {
-        return [...prev, summarizerId];
-      }
-    });
-  };
+  const selectedSourceDoctorsData = doctors.filter(d => 
+    state.selectedSourceDoctors.includes(d.id)
+  );
+  
+  const selectedTargetDoctorsData = doctors.filter(d => 
+    state.selectedTargetDoctors.includes(d.id)
+  );
 
   // Handle bulk email input
   const handleBulkEmailInput = (value) => {
-    setTargetEmails(value);
-    // Parse emails from text (comma or line separated)
-    const emails = value.split(/[,\n]/)
-      .map(e => e.trim())
-      .filter(e => e.length > 0);
-    
-    // Find matching doctors by email
-    const matchingDoctors = doctors.filter(d => 
-      emails.some(email => d.email.toLowerCase() === email.toLowerCase())
-    );
-    
-    setSelectedTargetDoctors(matchingDoctors.map(d => d.id));
+    actions.setTargetEmails(value);
+    const emails = parseEmailInput(value);
+    const matchingDoctors = findDoctorsByEmails(emails, doctors);
+    actions.setTargetDoctors(matchingDoctors.map(d => d.id));
   };
 
-  // Check if cross-EHR copy is needed
-  const needsResourceMapping = () => {
-    if (selectedSourceDoctors.length === 0 || selectedTargetDoctors.length === 0) return false;
-    
-    const sourceEHRs = [...new Set(selectedSourceDoctors.map(id => {
-      const doctor = doctors.find(d => d.id === id);
-      return doctor?.ehr;
-    }))];
-    
-    const targetEHRs = [...new Set(selectedTargetDoctors.map(id => {
-      const doctor = doctors.find(d => d.id === id);
-      return doctor?.ehr;
-    }))];
-    
-    // Check if any target EHR is different from any source EHR
-    return targetEHRs.some(targetEHR => 
-      sourceEHRs.every(sourceEHR => sourceEHR !== targetEHR)
+  // Prepare and show resource mapping
+  const handlePrepareResourceMapping = () => {
+    const mappings = prepareResourceMappings(
+      state.selectedSourceDoctors,
+      state.selectedTargetDoctors,
+      doctors,
+      availableSummarizers
     );
-  };
-
-  // Prepare resource mappings for cross-EHR copies
-  const prepareResourceMappings = () => {
-    if (!needsResourceMapping()) return;
-
-    const mappings = {};
-    const sourceDoctors = doctors.filter(d => selectedSourceDoctors.includes(d.id));
-    const targetDoctors = doctors.filter(d => selectedTargetDoctors.includes(d.id));
-    
-    // For each source doctor's summarizers that pull from EHR
-    sourceDoctors.forEach(sourceDoctor => {
-      const sourceSummarizers = availableSummarizers.filter(s => 
-        s.doctorId === sourceDoctor.id && s.pullFromEHR && s.selectedResource
-      );
-      
-      targetDoctors.forEach(targetDoctor => {
-        if (sourceDoctor.ehr !== targetDoctor.ehr) {
-          sourceSummarizers.forEach(summarizer => {
-            const key = `${summarizer.id}-${targetDoctor.id}`;
-            if (!mappings[key]) {
-              mappings[key] = {
-                summarizerId: summarizer.id,
-                summarizerName: summarizer.name,
-                sourceDoctorId: sourceDoctor.id,
-                sourceDoctorName: sourceDoctor.name,
-                sourceEHR: sourceDoctor.ehr,
-                sourceResource: summarizer.selectedResource,
-                targetDoctorId: targetDoctor.id,
-                targetDoctorName: targetDoctor.name,
-                targetEHR: targetDoctor.ehr,
-                targetResource: null
-              };
-            }
-          });
-        }
-      });
-    });
-    
-    setResourceMappings(mappings);
+    actions.setResourceMappings(mappings);
     return Object.keys(mappings).length > 0;
   };
 
-  // Handle execute copy
-  const handleExecute = async () => {
-    // Validation
-    if (selectedSourceDoctors.length === 0) {
-      alert('Please select at least one source doctor');
-      return;
-    }
-
-    if (copyType === 'summarizers' && selectedSummarizers.length === 0) {
-      alert('Please select at least one summarizer to copy');
-      return;
-    }
-
-    if (selectedTargetDoctors.length === 0 && !targetEmails.trim()) {
-      alert('Please select target doctors or enter email addresses');
-      return;
-    }
-
-    // Check if resource mapping is needed
-    if (needsResourceMapping()) {
-      const hasMappings = prepareResourceMappings();
-      if (hasMappings) {
-        setShowResourceMapping(true);
-        return;
-      }
-    }
-
-    // Execute the copy
-    await executeCopy();
-  };
-
-  // Execute the actual copy operation
+  // Execute copy operation
   const executeCopy = async () => {
-    setIsExecuting(true);
-    setExecutionProgress({ current: 0, total: selectedTargetDoctors.length });
+    actions.setExecutionState(true);
+    actions.setExecutionProgress({ current: 0, total: state.selectedTargetDoctors.length });
 
     try {
-      // Simulate progress (in real implementation, this would be actual API calls)
-      for (let i = 0; i < selectedTargetDoctors.length; i++) {
+      // Simulate progress
+      for (let i = 0; i < state.selectedTargetDoctors.length; i++) {
         await new Promise(resolve => setTimeout(resolve, 500));
-        setExecutionProgress({ current: i + 1, total: selectedTargetDoctors.length });
+        actions.setExecutionProgress({ 
+          current: i + 1, 
+          total: state.selectedTargetDoctors.length 
+        });
       }
 
       // Call the parent's execute function
       if (onExecuteCopy) {
         await onExecuteCopy({
-          sourceDoctors: selectedSourceDoctors,
-          targetDoctors: selectedTargetDoctors,
-          targetEmails: targetEmails.split(/[,\n]/).map(e => e.trim()).filter(e => e),
-          copyType,
-          selectedSummarizers,
-          resourceMappings
+          sourceDoctors: state.selectedSourceDoctors,
+          targetDoctors: state.selectedTargetDoctors,
+          targetEmails: parseEmailInput(state.targetEmails),
+          copyType: state.copyType,
+          selectedSummarizers: state.selectedSummarizers,
+          resourceMappings: state.resourceMappings
         });
       }
 
-      alert(`Successfully copied to ${selectedTargetDoctors.length} doctor(s)!`);
-      
-      // Reset form
-      setSelectedSourceDoctors([]);
-      setSelectedTargetDoctors([]);
-      setSelectedSummarizers([]);
-      setTargetEmails('');
-      setTargetEHR('');
-      setShowResourceMapping(false);
-      setResourceMappings({});
+      alert(`Successfully copied to ${state.selectedTargetDoctors.length} doctor(s)!`);
+      actions.resetForm();
     } catch (error) {
       alert(`Error during copy operation: ${error.message}`);
     } finally {
-      setIsExecuting(false);
-      setExecutionProgress(null);
+      actions.setExecutionState(false);
+      actions.setExecutionProgress(null);
     }
   };
 
-  // Get selected source doctors
-  const getSelectedSourceDoctorsData = () => {
-    return doctors.filter(d => selectedSourceDoctors.includes(d.id));
+  // Handle execute button click
+  const handleExecute = async () => {
+    const validation = validateCopyOperation(state);
+    if (!validation.valid) {
+      alert(validation.message);
+      return;
+    }
+
+    // Check if resource mapping is needed
+    if (needsResourceMapping(state.selectedSourceDoctors, state.selectedTargetDoctors, doctors)) {
+      const hasMappings = handlePrepareResourceMapping();
+      if (hasMappings) {
+        actions.setShowResourceMapping(true);
+        return;
+      }
+    }
+
+    await executeCopy();
   };
 
-  // Get selected target doctors data
-  const getSelectedTargetDoctorsData = () => {
-    return doctors.filter(d => selectedTargetDoctors.includes(d.id));
+  // Handle resource mapping modal execute
+  const handleResourceMappingExecute = async () => {
+    actions.setShowResourceMapping(false);
+    await executeCopy();
   };
 
   return (
@@ -710,5 +597,6 @@ const BulkTransferPage = ({
 };
 
 export default BulkTransferPage;
+
 
 

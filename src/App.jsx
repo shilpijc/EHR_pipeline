@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { ChevronRight, Users, Plus, FileText, Database, Settings, Clock, CheckCircle, AlertCircle, Table as TableIcon, MoreVertical, Copy, Pencil, X, Info, Power, Maximize2, Check, Save } from 'lucide-react';
 
 // Import extracted configs
@@ -11,7 +11,8 @@ import {
   getAllDocumentTypes,
   getDocumentTypesForEhr,
   getAllEhrDocumentTypeCombinations,
-  getAllEhrNames
+  getAllEhrNames,
+  getDependenciesForDocumentType
 } from './config';
 
 // Import utility functions
@@ -32,6 +33,7 @@ import BulkTransferPage from './components/BulkTransferPage';
 import DoctorsView from './components/views/DoctorsView';
 import SummarizersVariablesView from './components/views/SummarizersVariablesView';
 import CopyDoctorModal from './components/modals/CopyDoctorModal';
+import AddSectionModal from './components/modals/AddSectionModal';
 
 // Import hooks (available for future use)
 // import { useModals } from './hooks/useModals';
@@ -515,6 +517,7 @@ const SummarizerPrototype = () => {
 
   // Form data for create summarizer
   const [formData, setFormData] = useState(DEFAULT_FORM_DATA);
+  const [resourceDependencyWarning, setResourceDependencyWarning] = useState(null);
   
   // Advanced settings visibility state
   const [showAdvancedSettings, setShowAdvancedSettings] = useState(false);
@@ -549,9 +552,40 @@ const SummarizerPrototype = () => {
   
   // Custom sections that extend the base template hierarchy
   const [customSections, setCustomSections] = useState({});
-  
+
+  const modalSections = useMemo(() => {
+    const merged = { ...templateHierarchy, ...customSections };
+    const sections = [];
+
+    Object.entries(merged).forEach(([parentKey, parent]) => {
+      sections.push({
+        key: parentKey,
+        name: parent.name,
+        level: 'parent',
+        parentKey: null
+      });
+
+      if (parent.children) {
+        Object.entries(parent.children).forEach(([childKey, child]) => {
+          sections.push({
+            key: childKey,
+            name: child.name,
+            level: 'child',
+            parentKey
+          });
+        });
+      }
+    });
+
+    return sections;
+  }, [customSections]);
+
+  // Ghost sections - sections without summarizers (grayed out)
+  const [ghostSections, setGhostSections] = useState({}); // { sectionKey: { templates: ['general', 'followup'], position: {...} } }
+
   // State for creating new section modal
   const [showCreateSectionModal, setShowCreateSectionModal] = useState(false);
+  const [showAddSectionModal, setShowAddSectionModal] = useState(false);
   const [newSectionData, setNewSectionData] = useState({
     level: 'parent', // 'parent', 'child', 'grandchild'
     parentKey: '',
@@ -610,23 +644,14 @@ const SummarizerPrototype = () => {
   const [createType, setCreateType] = useState(null); // 'summarizer' | 'batch-copy' | null
   const [showCreateTypeModal, setShowCreateTypeModal] = useState(false);
 
-  // Batch copy state
-  const [batchCopySummarizers, setBatchCopySummarizers] = useState([]); // Array of summarizers being batch edited
-  const [selectedBatchSummarizer, setSelectedBatchSummarizer] = useState(null); // Currently selected summarizer in left nav
-  const [batchCopySourceDoctor, setBatchCopySourceDoctor] = useState(null); // Source doctor for copying
+  // Copy state
   const [editingSummarizerId, setEditingSummarizerId] = useState(null);
   const [showCopySummarizerModal, setShowCopySummarizerModal] = useState(false);
   const [copySourceDoctorForSummarizer, setCopySourceDoctorForSummarizer] = useState(null);
 
-  // Sync formData with current batch summarizer when selection changes
   useEffect(() => {
-    const isInBatchMode = currentView === 'batch-copy-edit' && batchCopySummarizers.length > 0;
-    const currentBatchSummarizer = batchCopySummarizers.find(s => s.id === selectedBatchSummarizer);
-
-    if (isInBatchMode && currentBatchSummarizer) {
-      setFormData(currentBatchSummarizer);
-    }
-  }, [selectedBatchSummarizer, currentView, batchCopySummarizers]);
+    setResourceDependencyWarning(null);
+  }, [selectedDoctor?.id]);
 
   // ============================================================================
   // HELPER FUNCTIONS
@@ -1097,108 +1122,42 @@ const SummarizerPrototype = () => {
   };
 
   const handleAddParentSection = () => {
-    const sectionName = prompt('Enter name for new parent section:');
-    if (!sectionName || !sectionName.trim()) return;
+    setShowAddSectionModal(true);
+  };
 
-    const sectionKey = sectionName.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '');
+  const handleAddSectionSubmit = ({ name, templates, position, level, parent, isGhost }) => {
+    const sectionKey = name.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '');
 
     const newSection = {
-      name: sectionName.trim(),
+      name: name,
       type: 'text',
       children: {}
     };
 
+    // Add to custom sections
     setCustomSections(prev => ({
       ...prev,
       [sectionKey]: newSection
     }));
 
-    // Initialize the section in sectionSummarizers
-    setSectionSummarizers(prev => ({...prev, [sectionKey]: []}));
-  };
-
-  const handleAddChildSection = ({ parentKey, childKey, level, name }) => {
-    // Generate a unique key for the new section
-    const sectionKey = name.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '');
-
-    const newSection = {
-      name: name,
-      type: 'text'
-    };
-
-    if (level === 'child') {
-      // Adding a child to a parent section
-      const merged = {...templateHierarchy, ...customSections};
-      const parent = merged[parentKey];
-      if (parent) {
-        if (parentKey in customSections) {
-          // Parent is already in customSections, just add the child
-          setCustomSections(prev => ({
-            ...prev,
-            [parentKey]: {
-              ...prev[parentKey],
-              children: {...(prev[parentKey].children || {}), [sectionKey]: newSection}
-            }
-          }));
-        } else {
-          // Parent is in templateHierarchy, need to copy it to customSections first
-          setCustomSections(prev => ({
-            ...prev,
-            [parentKey]: {
-              ...templateHierarchy[parentKey],
-              children: {...(templateHierarchy[parentKey].children || {}), [sectionKey]: newSection}
-            }
-          }));
+    // Mark as ghost section
+    if (isGhost) {
+      setGhostSections(prev => ({
+        ...prev,
+        [sectionKey]: {
+          templates: templates,
+          position: position
         }
-      }
-    } else if (level === 'grandchild') {
-      // Adding a grandchild to a child section
-      const merged = {...templateHierarchy, ...customSections};
-      const parent = merged[parentKey];
-      if (parent && parent.children && parent.children[childKey]) {
-        if (parentKey in customSections) {
-          // Parent is already in customSections
-          setCustomSections(prev => ({
-            ...prev,
-            [parentKey]: {
-              ...prev[parentKey],
-              children: {
-                ...prev[parentKey].children,
-                [childKey]: {
-                  ...prev[parentKey].children[childKey],
-                  children: {
-                    ...(prev[parentKey].children[childKey].children || {}),
-                    [sectionKey]: newSection
-                  }
-                }
-              }
-            }
-          }));
-        } else {
-          // Parent is in templateHierarchy
-          setCustomSections(prev => ({
-            ...prev,
-            [parentKey]: {
-              ...templateHierarchy[parentKey],
-              children: {
-                ...templateHierarchy[parentKey].children,
-                [childKey]: {
-                  ...templateHierarchy[parentKey].children[childKey],
-                  children: {
-                    ...(templateHierarchy[parentKey].children[childKey].children || {}),
-                    [sectionKey]: newSection
-                  }
-                }
-              }
-            }
-          }));
-        }
-      }
+      }));
     }
 
-    // Initialize the section in sectionSummarizers
-    setSectionSummarizers(prev => ({...prev, [sectionKey]: []}));
+    // Initialize empty summarizers for each template
+    templates.forEach(template => {
+      const cellKey = `${sectionKey}-${template}`;
+      setSectionSummarizers(prev => ({...prev, [cellKey]: []}));
+    });
   };
+
 
   // ============================================================================
   // SUMMARIZER RENDER FUNCTIONS
@@ -2320,32 +2279,49 @@ const SummarizerPrototype = () => {
   // SUMMARIZERS & VARIABLES VIEW
   if (currentView === 'summarizers-variables') {
     return (
-      <SummarizersVariablesView
-        selectedDoctor={selectedDoctor}
-        createdSummarizers={createdSummarizers}
-        setCreatedSummarizers={setCreatedSummarizers}
-        configMode={configMode}
-        setConfigMode={setConfigMode}
-        sectionSummarizers={sectionSummarizers}
-        setSectionSummarizers={setSectionSummarizers}
-        customSections={customSections}
-        cellSummarizerDropdown={cellSummarizerDropdown}
-        setCellSummarizerDropdown={setCellSummarizerDropdown}
-        pendingSummarizerSelection={pendingSummarizerSelection}
-        setPendingSummarizerSelection={setPendingSummarizerSelection}
-        promptEditModal={promptEditModal}
-        setPromptEditModal={setPromptEditModal}
-        promptModalAction={promptModalAction}
-        setPromptModalAction={setPromptModalAction}
-        showCreateTypeModal={showCreateTypeModal}
-        setShowCreateTypeModal={setShowCreateTypeModal}
-        onBack={() => setCurrentView('doctors')}
-        onEditSummarizer={handleEditSummarizer}
-        onSelectCreateType={handleSelectCreateType}
-        onJumpToSection={jumpToSection}
-        onAddChildSection={handleAddChildSection}
-        onAddParentSection={handleAddParentSection}
-      />
+      <>
+        <SummarizersVariablesView
+          selectedDoctor={selectedDoctor}
+          createdSummarizers={createdSummarizers}
+          setCreatedSummarizers={setCreatedSummarizers}
+          configMode={configMode}
+          setConfigMode={setConfigMode}
+          sectionSummarizers={sectionSummarizers}
+          setSectionSummarizers={setSectionSummarizers}
+          customSections={customSections}
+          ghostSections={ghostSections}
+          setGhostSections={setGhostSections}
+          cellSummarizerDropdown={cellSummarizerDropdown}
+          setCellSummarizerDropdown={setCellSummarizerDropdown}
+          pendingSummarizerSelection={pendingSummarizerSelection}
+          setPendingSummarizerSelection={setPendingSummarizerSelection}
+          promptEditModal={promptEditModal}
+          setPromptEditModal={setPromptEditModal}
+          promptModalAction={promptModalAction}
+          setPromptModalAction={setPromptModalAction}
+          showCreateTypeModal={showCreateTypeModal}
+          setShowCreateTypeModal={setShowCreateTypeModal}
+          onBack={() => setCurrentView('doctors')}
+          onEditSummarizer={handleEditSummarizer}
+          onSelectCreateType={handleSelectCreateType}
+          onJumpToSection={jumpToSection}
+          onAddNewSection={handleAddParentSection}
+        />
+
+        <AddSectionModal
+          isOpen={showAddSectionModal}
+          onClose={() => setShowAddSectionModal(false)}
+          onAddSection={handleAddSectionSubmit}
+          existingSections={modalSections}
+          templates={['general', 'followup', 'neurology', 'initial']}
+          templateNames={{
+            general: 'General Template',
+            followup: 'Follow-up',
+            neurology: 'Neurology',
+            initial: 'Initial Consultation'
+          }}
+        />
+      </>
     );
   }
 
@@ -4124,13 +4100,8 @@ const SummarizerPrototype = () => {
   }
 
 
-  // CREATE SUMMARIZER VIEW (with optional batch edit mode)
-  const isInBatchMode = currentView === 'batch-copy-edit' && batchCopySummarizers.length > 0;
-  const currentBatchSummarizer = isInBatchMode
-    ? batchCopySummarizers.find(s => s.id === selectedBatchSummarizer)
-    : null;
-
-  if ((currentView === 'create' && createType === 'summarizer') || currentView === 'batch-copy-edit') {
+  // CREATE SUMMARIZER VIEW
+  if (currentView === 'create' && createType === 'summarizer') {
     // Utility functions now imported from utils
 
     // Helper function to auto-populate prompts from document type defaults
@@ -4170,6 +4141,7 @@ const SummarizerPrototype = () => {
     };
 
     const handleResourceChange = (resourceId) => {
+      setResourceDependencyWarning(null);
       const ehr = selectedDoctor?.ehr;
       const resources = getResourcesForEhr(ehr);
       const resource = resources.find((r) => r.id === resourceId);
@@ -4197,6 +4169,29 @@ const SummarizerPrototype = () => {
           retrievalMethod: 'latest'
         }));
         return;
+      }
+
+      const resourceDependencies = getDependenciesForDocumentType(resource.documentType);
+      if (resourceDependencies.length > 0) {
+        const doctorSummarizers = createdSummarizers.filter(s => s.doctorId === selectedDoctor?.id);
+        const hasPrerequisite = resourceDependencies.every((dependencyDoc) => {
+          return doctorSummarizers.some((summarizer) => {
+            if (!summarizer.selectedResource) {
+              return false;
+            }
+            const summResources = getResourcesForEhr(summarizer.ehr);
+            const summResource = summResources.find(r => r.id === summarizer.selectedResource);
+            return summResource?.documentType === dependencyDoc;
+          });
+        });
+
+        if (!hasPrerequisite) {
+          const dependencyLabel = resourceDependencies.join(', ');
+          setResourceDependencyWarning(
+            `Selecting ${formatResourceOption(resource)} requires a ${dependencyLabel} summarizer for this doctor first.`
+          );
+          return;
+        }
       }
 
       // Reset all filter values first
@@ -4420,33 +4415,28 @@ const SummarizerPrototype = () => {
         return;
       }
       
-      if (isInBatchMode) {
-        // Batch mode - save current formData back to batch array
-        setBatchCopySummarizers(prev =>
-          prev.map(s =>
-            s.id === selectedBatchSummarizer
-              ? { ...formData, id: s.id, _isModified: true }
-              : s
-          )
-        );
-
-        // Don't navigate away, stay in batch mode
-        alert('Summarizer updated! Click "Save All" when you\'re done editing all summarizers.');
-      } else if (editingSummarizerId) {
+      if (editingSummarizerId) {
         // Update existing summarizer
+        const existingSummarizer = createdSummarizers.find(s => s.id === editingSummarizerId);
+        const wasPending = existingSummarizer && existingSummarizer.status === 'pending';
+        
         const updatedSummarizer = {
           ...formData,
           id: editingSummarizerId,
           doctorId: selectedDoctor?.id,
           doctorName: selectedDoctor?.name,
-          ehr: selectedDoctor?.ehr
+          ehr: selectedDoctor?.ehr,
+          active: true, // Activate if it was pending
+          status: 'active' // Change status from pending to active
         };
 
         setCreatedSummarizers(prev => prev.map(s =>
           s.id === editingSummarizerId ? updatedSummarizer : s
         ));
 
-        const statusMessage = 'Summarizer updated successfully!\n\n✓ Configuration saved\n✓ Ready for immediate use';
+        const statusMessage = wasPending 
+          ? 'Summarizer activated successfully!\n\n✓ Draft reviewed and activated\n✓ Configuration saved\n✓ Ready for immediate use'
+          : 'Summarizer updated successfully!\n\n✓ Configuration saved\n✓ Ready for immediate use';
 
         alert(statusMessage);
         setEditingSummarizerId(null);
@@ -4472,101 +4462,11 @@ const SummarizerPrototype = () => {
     };
 
     return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50 flex">
-        {/* Left Sidebar - Batch Summarizer List (only shown in batch mode) */}
-        {isInBatchMode && (
-          <div className="w-80 bg-white border-r border-slate-200 flex flex-col">
-            <div className="p-6 border-b border-slate-200">
-              <button
-                onClick={() => {
-                  if (window.confirm('Discard all changes and go back?')) {
-                    setBatchCopySummarizers([]);
-                    setSelectedBatchSummarizer(null);
-                    setCurrentView('doctors');
-                  }
-                }}
-                className="flex items-center gap-2 text-slate-600 hover:text-slate-800 mb-4 transition-colors text-sm"
-              >
-                <ChevronRight className="w-4 h-4 rotate-180" />
-                Back
-              </button>
-              <h2 className="text-lg font-bold text-slate-800">Batch Edit</h2>
-              <p className="text-sm text-slate-600">
-                {batchCopySummarizers.length} summarizers for {selectedDoctor?.name}
-              </p>
-            </div>
-
-            <div className="flex-1 overflow-y-auto p-4 space-y-2">
-              {batchCopySummarizers.map((summarizer, index) => {
-                const isSelected = summarizer.id === selectedBatchSummarizer;
-                const hasChanges = summarizer._isModified;
-
-                return (
-                  <div
-                    key={summarizer.id}
-                    onClick={() => setSelectedBatchSummarizer(summarizer.id)}
-                    className={`p-3 rounded-lg cursor-pointer transition-all ${
-                      isSelected
-                        ? 'bg-blue-100 border-2 border-blue-500'
-                        : 'bg-slate-50 border-2 border-transparent hover:border-blue-300'
-                    }`}
-                  >
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 mb-1">
-                          <span className="text-xs font-medium text-slate-500">#{index + 1}</span>
-                          {hasChanges && (
-                            <span className="w-2 h-2 bg-orange-500 rounded-full" title="Modified"></span>
-                          )}
-                        </div>
-                        <div className="font-medium text-sm text-slate-800 truncate">
-                          {summarizer.name || 'Untitled Summarizer'}
-                        </div>
-                        {summarizer.selectedResource && (
-                          <div className="text-xs text-slate-500 truncate mt-1">
-                            {summarizer.selectedResource}
-                          </div>
-                        )}
-                      </div>
-                      {isSelected && (
-                        <Check className="w-4 h-4 text-blue-600 flex-shrink-0" />
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-
-            <div className="p-4 border-t border-slate-200">
-              <button
-                onClick={() => {
-                  // Save all summarizers
-                  const newSummarizers = batchCopySummarizers.map(s => {
-                    const { _isNew, _isModified, originalId, ...rest } = s;
-                    return rest;
-                  });
-
-                  setCreatedSummarizers(prev => [...prev, ...newSummarizers]);
-                  alert(`Successfully created ${newSummarizers.length} summarizers!`);
-
-                  // Reset and go back
-                  setBatchCopySummarizers([]);
-                  setSelectedBatchSummarizer(null);
-                  setCurrentView('doctors');
-                }}
-                className="w-full px-4 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-lg font-semibold flex items-center justify-center gap-2 transition-all shadow-lg hover:shadow-xl"
-              >
-                <Save className="w-4 h-4" />
-                Save All Summarizers
-              </button>
-            </div>
-          </div>
-        )}
-
+      <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50">
         {/* Main Content Area */}
-        <div className={`flex-1 overflow-y-auto ${isInBatchMode ? '' : 'max-w-4xl mx-auto'} px-6 py-8`}>
+        <div className="flex-1 overflow-y-auto max-w-4xl mx-auto px-6 py-8">
           <div className="mb-8">
-            {!isInBatchMode && (
+            {(
               <button
                 onClick={handleCancelCreate}
                 className="flex items-center gap-2 text-slate-600 hover:text-slate-800 mb-4 transition-colors"
@@ -4583,17 +4483,115 @@ const SummarizerPrototype = () => {
                 </div>
                 <div>
                   <h1 className="text-2xl font-bold text-slate-800">
-                    {isInBatchMode ? 'Edit Batch Summarizer' : editingSummarizerId ? 'Edit Summarizer' : 'Create New Summarizer'}
+                    {(() => {
+                      if (editingSummarizerId) {
+                        const currentSummarizer = createdSummarizers.find(s => s.id === editingSummarizerId);
+                        if (currentSummarizer && currentSummarizer.status === 'pending') {
+                          return '📝 Review & Activate Draft Summarizer';
+                        }
+                        return 'Edit Summarizer';
+                      }
+                      return 'Create New Summarizer';
+                    })()}
                   </h1>
-                  <p className="text-slate-600">for {selectedDoctor?.name} • {selectedDoctor?.ehr} EHR</p>
+                  <p className="text-slate-600">
+                    for {selectedDoctor?.name} • {selectedDoctor?.ehr} EHR
+                    {(() => {
+                      if (editingSummarizerId) {
+                        const currentSummarizer = createdSummarizers.find(s => s.id === editingSummarizerId);
+                        if (currentSummarizer && currentSummarizer.status === 'pending') {
+                          return ' • ⚠️ Draft Mode - Not Active Yet';
+                        }
+                      }
+                      return '';
+                    })()}
+                  </p>
                 </div>
               </div>
             </div>
+
+            {/* Active & Pending Summarizers Bar */}
+            {(() => {
+              const activeSummarizers = createdSummarizers.filter(s => s.doctorId === selectedDoctor?.id && s.active !== false && s.status !== 'pending');
+              const pendingSummarizers = createdSummarizers.filter(s => s.doctorId === selectedDoctor?.id && (s.status === 'pending' || s.active === false));
+              
+              return (
+                <div className="space-y-4">
+                  {/* Active Summarizers Section */}
+                  <div className="bg-gradient-to-r from-emerald-50/80 to-green-50/80 border border-emerald-200 rounded-2xl p-4 shadow-sm">
+                    <div className="flex items-center justify-between mb-3">
+                      <h3 className="text-sm font-bold text-emerald-800 uppercase tracking-wide flex items-center gap-2">
+                        <span className="h-3 w-3 rounded-full bg-emerald-500" />
+                        Active Summarizers
+                      </h3>
+                      <span className="text-xs font-semibold text-emerald-700 bg-white px-3 py-1 rounded-full border border-emerald-300">
+                        {activeSummarizers.length} active
+                      </span>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {activeSummarizers.length > 0 ? (
+                        activeSummarizers.map((summary) => (
+                          <span
+                            key={summary.id}
+                            className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white text-slate-800 border border-emerald-200 text-sm font-semibold shadow-sm hover:shadow-md transition-shadow cursor-pointer"
+                            title={summary.purpose || summary.name}
+                            onClick={() => {
+                              setEditingSummarizerId(summary.id);
+                              setFormData(summary);
+                            }}
+                          >
+                            <span className="h-2 w-2 rounded-full bg-emerald-500" />
+                            <span>{summary.name}</span>
+                          </span>
+                        ))
+                      ) : (
+                        <span className="text-sm text-slate-600 italic">No active summarizers yet</span>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Pending Summarizers Section */}
+                  {pendingSummarizers.length > 0 && (
+                    <div className="bg-gradient-to-r from-amber-50/80 to-yellow-50/80 border-2 border-amber-300 rounded-2xl p-4 shadow-sm">
+                      <div className="flex items-center justify-between mb-3">
+                        <h3 className="text-sm font-bold text-amber-800 uppercase tracking-wide flex items-center gap-2">
+                          <span className="h-3 w-3 rounded-full bg-amber-500 animate-pulse" />
+                          Pending Summarizers (Drafts)
+                        </h3>
+                        <span className="text-xs font-semibold text-amber-700 bg-white px-3 py-1 rounded-full border border-amber-300">
+                          {pendingSummarizers.length} pending
+                        </span>
+                      </div>
+                      <p className="text-xs text-amber-700 mb-3 italic">
+                        ⚠️ These summarizers are in draft mode. Click to edit and save to activate them.
+                      </p>
+                      <div className="flex flex-wrap gap-2">
+                        {pendingSummarizers.map((summary) => (
+                          <span
+                            key={summary.id}
+                            className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white text-slate-800 border-2 border-amber-400 text-sm font-semibold shadow-sm hover:shadow-md transition-all cursor-pointer hover:border-amber-500"
+                            title={`Draft: ${summary.purpose || summary.name} - Click to review and activate`}
+                            onClick={() => {
+                              setEditingSummarizerId(summary.id);
+                              setFormData(summary);
+                            }}
+                          >
+                            <span className="h-2 w-2 rounded-full bg-amber-500 animate-pulse" />
+                            <span>{summary.name}</span>
+                            <span className="text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full font-bold">DRAFT</span>
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
           </div>
 
           <form onSubmit={handleFormSubmit} className="space-y-8">
-            {/* Prominent Copy Button (hidden in batch mode) */}
-            {!isInBatchMode && (
+            {/* Prominent Copy Button */}
+            {(
               <div className="mb-6">
                 <button
                   type="button"
@@ -4927,7 +4925,7 @@ const SummarizerPrototype = () => {
                     </label>
                       <div>
                     <p className="text-xs text-slate-500 mb-2">
-                      Select a resource. Options show resource name with available filters. Only date and number of documents are editable; other filters appear in Advanced Settings.
+                      Select a resource. Options show resource name with available filters. Only the editable filters shown below (for example, date ranges) can be changed; other filters appear in Advanced Settings.
                     </p>
                             <select
                               value={formData.selectedResource}
@@ -4942,6 +4940,11 @@ const SummarizerPrototype = () => {
                                 </option>
                               ))}
                             </select>
+                        {resourceDependencyWarning && (
+                          <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+                            {resourceDependencyWarning}
+                          </div>
+                        )}
                         {formData.selectedResource && (() => {
                           const resource = getResourcesForEhr(selectedDoctor?.ehr).find((r) => r.id === formData.selectedResource);
                           return resource?.source ? (
@@ -4970,6 +4973,23 @@ const SummarizerPrototype = () => {
 
                       const editableFilters = resource.filters?.editable || [];
                       const advancedFilters = resource.filters?.advanced || [];
+                      const editableFilterLabels = editableFilters
+                        .map((filter) => {
+                          if (filter.label) return filter.label;
+                          switch (filter.type) {
+                            case 'howFarBack':
+                              return 'How Far Back';
+                            case 'count':
+                              return 'Number of Documents';
+                            case 'retrievalMethod':
+                              return 'Retrieval Method';
+                            case 'singleDate':
+                              return 'Date';
+                            default:
+                              return null;
+                          }
+                        })
+                        .filter(Boolean);
 
                       return (
                         <div className="space-y-4">
@@ -4981,7 +5001,9 @@ const SummarizerPrototype = () => {
                               </span>
                     </div>
                             <p className="text-xs text-slate-500">
-                              Only "how far back" parameters and number of documents are editable. File type is auto-set based on the selected resource. Other filters are shown in Advanced Settings for transparency.
+                              {editableFilterLabels.length > 0
+                                ? `Editable filters: ${editableFilterLabels.join(', ')}. File format is auto-set based on the selected resource. Other filters are shown in Advanced Settings for transparency.`
+                                : 'File format is auto-set based on the selected resource. Other filters are shown in Advanced Settings for transparency.'}
                             </p>
                             {resource.fileFormat && (
                               <p className="text-xs text-slate-600 mt-2 font-medium">
@@ -6300,11 +6322,48 @@ const SummarizerPrototype = () => {
               >
                 Cancel
               </button>
+              
+              {/* Show "Discard Draft" button only for pending summarizers */}
+              {(() => {
+                if (editingSummarizerId) {
+                  const currentSummarizer = createdSummarizers.find(s => s.id === editingSummarizerId);
+                  if (currentSummarizer && currentSummarizer.status === 'pending') {
+                    return (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (confirm('Are you sure you want to discard this draft summarizer? This action cannot be undone.')) {
+                            // Remove the pending summarizer
+                            setCreatedSummarizers(prev => prev.filter(s => s.id !== editingSummarizerId));
+                            setEditingSummarizerId(null);
+                            setCurrentView('doctors');
+                            alert('Draft summarizer discarded successfully.');
+                          }
+                        }}
+                        className="px-6 py-3 border-2 border-red-300 text-red-600 rounded-xl font-medium hover:bg-red-50 transition-colors"
+                      >
+                        🗑️ Discard Draft
+                      </button>
+                    );
+                  }
+                }
+                return null;
+              })()}
+              
               <button
                 type="submit"
                 className="px-8 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-xl font-medium transition-all duration-200 shadow-lg hover:shadow-xl"
               >
-                {editingSummarizerId ? 'Update Summarizer' : 'Add Summarizer'}
+                {(() => {
+                  if (editingSummarizerId) {
+                    const currentSummarizer = createdSummarizers.find(s => s.id === editingSummarizerId);
+                    if (currentSummarizer && currentSummarizer.status === 'pending') {
+                      return '✅ Save & Activate Summarizer';
+                    }
+                    return 'Update Summarizer';
+                  }
+                  return 'Add Summarizer';
+                })()}
               </button>
             </div>
           </form>
@@ -6486,7 +6545,9 @@ const SummarizerPrototype = () => {
                           const sourceDoctor = doctors.find(d => d.id === summarizer.doctorId);
                           const isSameEHR = sourceDoctor?.ehr === selectedDoctor?.ehr;
                           
-                          setFormData({
+                          // Create a pending summarizer (draft) with copied data
+                          const pendingSummarizerId = `summarizer-pending-${Date.now()}`;
+                          const pendingSummarizer = {
                             name: summarizer.name,
                             purpose: summarizer.purpose,
                             pullFromEHR: summarizer.pullFromEHR,
@@ -6516,51 +6577,107 @@ const SummarizerPrototype = () => {
                             avg_summarization_time: summarizer.avg_summarization_time || 60,
                             create_intermediate: summarizer.create_intermediate !== undefined ? summarizer.create_intermediate : true,
                             depends_on_summarisers: summarizer.depends_on_summarisers || [],
-                            active: true,
+                            active: false, // Mark as pending/draft
+                            status: 'pending', // Explicit pending status
                             variables: summarizer.variables || [],
                             howFarBackYears: isSameEHR ? (summarizer.howFarBackYears || 0) : 0,
                             howFarBackMonths: isSameEHR ? (summarizer.howFarBackMonths || 0) : 0,
                             howFarBackDays: isSameEHR ? (summarizer.howFarBackDays || 0) : 0,
                             howFarBackToDays: isSameEHR ? (summarizer.howFarBackToDays || null) : null,
                             toRecent: isSameEHR ? (summarizer.toRecent || false) : false,
-                            retrievalMethod: isSameEHR ? (summarizer.retrievalMethod || 'latest') : 'latest'
-                          });
+                            retrievalMethod: isSameEHR ? (summarizer.retrievalMethod || 'latest') : 'latest',
+                            id: pendingSummarizerId,
+                            doctorId: selectedDoctor?.id,
+                            doctorName: selectedDoctor?.name,
+                            ehr: selectedDoctor?.ehr
+                          };
+                          
+                          // Add the pending summarizer to state
+                          setCreatedSummarizers(prev => [...prev, pendingSummarizer]);
+                          
+                          // Set the form to edit this pending summarizer
+                          setFormData(pendingSummarizer);
+                          setEditingSummarizerId(pendingSummarizerId);
                           
                           setShowCopySummarizerModal(false);
                           setSelectedSummarizers([]);
                           setCopySourceDoctorForSummarizer(null);
                           
                           if (!isSameEHR) {
-                            alert('Summarizer copied! Note: EHR resource configuration (data source config section) was not copied because the source doctor uses a different EHR system. Please configure the data source section for this EHR.');
+                            alert('Summarizer copied as DRAFT! Note: EHR resource configuration (data source config section) was not copied because the source doctor uses a different EHR system. Please configure the data source section for this EHR and click Save to activate.');
                           } else {
-                            alert('Summarizer configuration copied successfully! Please review and adjust as needed.');
+                            alert('Summarizer copied as DRAFT! The configuration has been pre-filled. Please review and click Save to activate it.');
                           }
                         }
                       } else {
-                        // Multiple selected - go to batch edit view
-                        const summarizersData = createdSummarizers
-                          .filter(s => selectedSummarizers.includes(s.id))
-                          .map(s => ({
-                            ...s,
-                            originalId: s.id,
-                            id: `${s.id}-copy-${Date.now()}-${Math.random()}`,
-                            doctorId: selectedDoctor.id,
-                            _isNew: true
-                          }));
+                        // Multiple selected - create all as pending drafts
+                        const pendingSummarizers = selectedSummarizers.map((summarizerId, index) => {
+                          const summarizer = createdSummarizers.find(s => s.id === summarizerId);
+                          if (!summarizer) return null;
+                          
+                          const sourceDoctor = doctors.find(d => d.id === summarizer.doctorId);
+                          const isSameEHR = sourceDoctor?.ehr === selectedDoctor?.ehr;
+                          const pendingSummarizerId = `summarizer-pending-${Date.now()}-${index}`;
+                          
+                          return {
+                            name: summarizer.name,
+                            purpose: summarizer.purpose,
+                            pullFromEHR: summarizer.pullFromEHR,
+                            allowUpload: summarizer.allowUpload,
+                            allowText: summarizer.allowText,
+                            useSeparatePrompts: summarizer.useSeparatePrompts,
+                            commonPrompt: summarizer.commonPrompt || '',
+                            selectedResource: isSameEHR ? (summarizer.selectedResource || '') : '',
+                            dataSelection: isSameEHR ? (summarizer.dataSelection || 'count') : 'count',
+                            documentCount: isSameEHR ? (summarizer.documentCount || 5) : 5,
+                            dateFrom: isSameEHR ? (summarizer.dateFrom || '') : '',
+                            dateTo: isSameEHR ? (summarizer.dateTo || '') : '',
+                            singleDate: isSameEHR ? (summarizer.singleDate || '') : '',
+                            organizationIds: isSameEHR ? (summarizer.organizationIds || '') : '',
+                            templateIds: isSameEHR ? (summarizer.templateIds || '') : '',
+                            keywords: isSameEHR ? (summarizer.keywords || '') : '',
+                            visitTypes: isSameEHR ? (summarizer.visitTypes || '') : '',
+                            sortingDirection: isSameEHR ? (summarizer.sortingDirection || '') : '',
+                            documentTypes: isSameEHR ? (summarizer.documentTypes || '') : '',
+                            fileType: isSameEHR ? (summarizer.fileType || '') : '',
+                            ehrPrompt: summarizer.ehrPrompt || '',
+                            uploadPrompt: summarizer.uploadPrompt || '',
+                            textPrompt: summarizer.textPrompt || '',
+                            primaryModel: summarizer.primaryModel || '',
+                            fallbackModel: summarizer.fallbackModel || '',
+                            avg_summarization_time: summarizer.avg_summarization_time || 60,
+                            create_intermediate: summarizer.create_intermediate !== undefined ? summarizer.create_intermediate : true,
+                            depends_on_summarisers: summarizer.depends_on_summarisers || [],
+                            active: false,
+                            status: 'pending',
+                            variables: summarizer.variables || [],
+                            howFarBackYears: isSameEHR ? (summarizer.howFarBackYears || 0) : 0,
+                            howFarBackMonths: isSameEHR ? (summarizer.howFarBackMonths || 0) : 0,
+                            howFarBackDays: isSameEHR ? (summarizer.howFarBackDays || 0) : 0,
+                            howFarBackToDays: isSameEHR ? (summarizer.howFarBackToDays || null) : null,
+                            toRecent: isSameEHR ? (summarizer.toRecent || false) : false,
+                            retrievalMethod: isSameEHR ? (summarizer.retrievalMethod || 'latest') : 'latest',
+                            id: pendingSummarizerId,
+                            doctorId: selectedDoctor?.id,
+                            doctorName: selectedDoctor?.name,
+                            ehr: selectedDoctor?.ehr
+                          };
+                        }).filter(Boolean);
 
-                        setBatchCopySummarizers(summarizersData);
-                        setSelectedBatchSummarizer(summarizersData[0]?.id || null);
+                        // Add all pending summarizers to state
+                        setCreatedSummarizers(prev => [...prev, ...pendingSummarizers]);
 
-                        // Initialize formData with first summarizer
-                        if (summarizersData[0]) {
-                          setFormData(summarizersData[0]);
+                        // Open the first one for editing
+                        if (pendingSummarizers[0]) {
+                          setFormData(pendingSummarizers[0]);
+                          setEditingSummarizerId(pendingSummarizers[0].id);
                         }
 
                         setShowCopySummarizerModal(false);
                         setSelectedSummarizers([]);
                         setCopySourceDoctorForSummarizer(null);
-                        setCreateType('summarizer');
-                        setCurrentView('batch-copy-edit');
+                        
+                        alert(`${pendingSummarizers.length} summarizers copied as DRAFTS! The first one is opened for review. You can see all pending summarizers in the yellow section above. Click each to review and activate.`);
                       }
                     }}
                     disabled={!copySourceDoctorForSummarizer || selectedSummarizers.length === 0}
