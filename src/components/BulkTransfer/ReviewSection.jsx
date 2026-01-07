@@ -5,7 +5,7 @@ const ReviewSection = ({
   selectedSourceCount,
   selectedTargetCount,
   copyType,
-  selectedSummarizersCount,
+  selectedSummarizer,
   needsResourceMapping,
   onCancel,
   onExecute,
@@ -14,7 +14,7 @@ const ReviewSection = ({
   const getCopyTypeLabel = () => {
     switch (copyType) {
       case 'summarizers':
-        return 'Selected Summarizers';
+        return 'Selected Summarizer';
       case 'full':
         return 'Full Configuration';
       case 'templates':
@@ -50,9 +50,9 @@ const ReviewSection = ({
           </div>
           {copyType === 'summarizers' && (
             <div>
-              <div className="text-sm font-medium text-slate-600 mb-1">Selected Summarizers</div>
+              <div className="text-sm font-medium text-slate-600 mb-1">Selected Summarizer</div>
               <div className="text-lg font-semibold text-slate-800">
-                {selectedSummarizersCount} selected
+                {selectedSummarizer ? selectedSummarizer.name : 'None selected'}
               </div>
             </div>
           )}
@@ -64,7 +64,7 @@ const ReviewSection = ({
               <AlertCircle className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
               <div className="text-sm text-amber-700">
                 <div className="font-semibold mb-1">Cross-EHR Copy Detected</div>
-                <div>Resource mapping will be required for summarizers that pull from EHR.</div>
+                <div>Resource mapping will be required for summarizer that pulls from EHR.</div>
               </div>
             </div>
           </div>
@@ -95,4 +95,3 @@ const ReviewSection = ({
 };
 
 export default ReviewSection;
-

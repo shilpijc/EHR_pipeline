@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, Plus, ArrowUp } from 'lucide-react';
+import { X, Plus, ArrowDown, ArrowUp } from 'lucide-react';
 
 const AddSectionModal = ({
   isOpen,
@@ -9,30 +9,23 @@ const AddSectionModal = ({
   templates,
   templateNames
 }) => {
-  const [step, setStep] = useState(1); // 1: Template, 2: Name/Level, 3: Location
+  const [step, setStep] = useState(1); // 1: Template, 2: Name, 3: Location
   const [selectedTemplate, setSelectedTemplate] = useState(null);
   const [sectionName, setSectionName] = useState('');
-  const [insertPosition, setInsertPosition] = useState(null); // { type: 'start' | 'child-start' | 'after', sectionKey?: string, parentKey?: string }
-  const [sectionLevel, setSectionLevel] = useState('parent'); // 'parent', 'child'
-  const [parentSection, setParentSection] = useState(null);
-  const parentSections = (existingSections || []).filter(section => section.level === 'parent');
-  const selectedParentDetails = parentSections.find(section => section.key === parentSection);
-  const childSiblings = (existingSections || []).filter(
-    (section) => section.level === 'child' && section.parentKey === parentSection
+  const [insertPosition, setInsertPosition] = useState(null); // { type: 'before' | 'after' | 'first-child', sectionKey: string }
+  const [positionType, setPositionType] = useState('after'); // 'before', 'after', 'first-child'
+  const [selectedSection, setSelectedSection] = useState(null);
+  // Get all sections for the selected template
+  // Base sections (from templateHierarchy) are available in all templates
+  // Custom sections have a templates array property
+  const templateSections = (existingSections || []).filter(
+    section => !section.templates || section.templates.includes(selectedTemplate)
   );
+
   const selectedTemplateName = selectedTemplate ? templateNames[selectedTemplate] : null;
-  const getChildAfterOptions = () => {
-    if (!parentSection) return [];
-    const options = [];
-    if (selectedParentDetails) {
-      options.push({
-        key: selectedParentDetails.key,
-        name: `${selectedParentDetails.name} (after parent)`
-      });
-    }
-    return [...options, ...childSiblings];
-  };
-  const afterOptions = sectionLevel === 'parent' ? parentSections : getChildAfterOptions();
+
+  // Get sections that can have children (for first-child option)
+  const sectionsWithChildrenSupport = templateSections;
 
   if (!isOpen) return null;
 
@@ -40,8 +33,8 @@ const AddSectionModal = ({
     setSelectedTemplate(null);
     setSectionName('');
     setInsertPosition(null);
-    setSectionLevel('parent');
-    setParentSection(null);
+    setPositionType('after');
+    setSelectedSection(null);
     setStep(1);
   };
 
@@ -49,9 +42,9 @@ const AddSectionModal = ({
     if (selectedTemplate === template) return;
     setSelectedTemplate(template);
     setSectionName('');
-    setSectionLevel('parent');
-    setParentSection(null);
     setInsertPosition(null);
+    setPositionType('after');
+    setSelectedSection(null);
   };
 
   const handleClose = () => {
@@ -62,14 +55,12 @@ const AddSectionModal = ({
   const handleSubmit = () => {
     if (!sectionName.trim()) return;
     if (!selectedTemplate) return;
-    if (sectionLevel === 'child' && !parentSection) return;
+    if (!insertPosition) return;
 
     onAddSection({
       name: sectionName.trim(),
       templates: [selectedTemplate],
       position: insertPosition,
-      level: sectionLevel,
-      parent: parentSection,
       isGhost: true // Mark as ghost section initially
     });
 
@@ -82,37 +73,27 @@ const AddSectionModal = ({
 
   const handleNext = () => {
     if (step === 1 && !selectedTemplate) return;
-    if (step === 2 && (!sectionName.trim() || (sectionLevel === 'child' && !parentSection))) return;
+    if (step === 2 && !sectionName.trim()) return;
     if (step < 3) setStep(step + 1);
   };
 
-  const handleLevelChange = (value) => {
-    setSectionLevel(value);
-    if (value !== 'child') {
-      setParentSection(null);
-    }
+  const handlePositionTypeChange = (type) => {
+    setPositionType(type);
+    setSelectedSection(null);
     setInsertPosition(null);
   };
 
-  const handleAfterSelection = (sectionKey) => {
+  const handleSectionSelect = (sectionKey) => {
     if (!sectionKey) {
+      setSelectedSection(null);
       setInsertPosition(null);
       return;
     }
+    setSelectedSection(sectionKey);
     setInsertPosition({
-      type: 'after',
-      sectionKey,
-      parentKey: sectionLevel === 'child' ? parentSection : null
+      type: positionType,
+      sectionKey
     });
-  };
-
-  const setParentStartPosition = () => {
-    setInsertPosition({ type: 'start' });
-  };
-
-  const setChildStartPosition = () => {
-    if (!parentSection) return;
-    setInsertPosition({ type: 'child-start', parentKey: parentSection });
   };
 
   return (
@@ -164,7 +145,7 @@ const AddSectionModal = ({
           </div>
         )}
 
-        {/* Step 2: Section Details */}
+        {/* Step 2: Section Name */}
         {step === 2 && (
           <div className="space-y-4">
             <p className="text-sm text-slate-600">
@@ -181,139 +162,124 @@ const AddSectionModal = ({
                 onChange={(e) => setSectionName(e.target.value)}
                 placeholder="e.g., Review of Systems, Medication List"
                 className="w-full p-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                autoFocus={!sectionName}
+                autoFocus
               />
+              <p className="text-xs text-slate-500 mt-2">
+                Enter a descriptive name for your new section
+              </p>
             </div>
-
-            <div>
-              <label className="block text-sm font-semibold text-slate-700 mb-2">
-                Section Level
-              </label>
-              <div className="space-y-2">
-                <label className="flex items-center gap-3 p-3 border border-slate-200 rounded-lg hover:bg-slate-50 cursor-pointer">
-                  <input
-                    type="radio"
-                    name="level"
-                    value="parent"
-                    checked={sectionLevel === 'parent'}
-                    onChange={() => handleLevelChange('parent')}
-                    className="w-4 h-4"
-                  />
-                  <div>
-                    <div className="font-medium text-slate-800">Parent Section</div>
-                    <div className="text-xs text-slate-500">Top-level section (e.g., Chief Complaint)</div>
-                  </div>
-                </label>
-                <label className="flex items-center gap-3 p-3 border border-slate-200 rounded-lg hover:bg-slate-50 cursor-pointer">
-                  <input
-                    type="radio"
-                    name="level"
-                    value="child"
-                    checked={sectionLevel === 'child'}
-                    onChange={() => handleLevelChange('child')}
-                    className="w-4 h-4"
-                  />
-                  <div>
-                    <div className="font-medium text-slate-800">Child Section</div>
-                    <div className="text-xs text-slate-500">Subsection under a parent (e.g., Symptom Onset)</div>
-                  </div>
-                </label>
-              </div>
-            </div>
-            {sectionLevel === 'child' && (
-              <div>
-                <label className="block text-sm font-semibold text-slate-700 mb-2">
-                  Parent Section *
-                </label>
-                <select
-                  value={parentSection || ''}
-                  onChange={(e) => {
-                    setParentSection(e.target.value || null);
-                    setInsertPosition(null);
-                  }}
-                  className="w-full p-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
-                >
-                  <option value="" disabled>
-                    Select parent section
-                  </option>
-                  {parentSections.map(section => (
-                    <option key={section.key} value={section.key}>
-                      {section.name}
-                    </option>
-                  ))}
-                </select>
-                {!parentSections.length && (
-                  <p className="text-sm text-amber-600 bg-amber-50 p-3 rounded-lg mt-3">
-                    No parent sections are currently available.
-                  </p>
-                )}
-              </div>
-            )}
           </div>
         )}
 
         {/* Step 3: Location Selection */}
         {step === 3 && (
-          <div className="space-y-4">
-            <p className="text-slate-600 mb-4">
-              {sectionLevel === 'parent'
-                ? `Where should "${sectionName}" appear in ${selectedTemplateName || 'the template'}?`
-                : selectedParentDetails
-                  ? `Where should "${sectionName}" appear under "${selectedParentDetails.name}"?`
-                  : `Where should "${sectionName}" appear?`
-              }
-            </p>
-            <div className="space-y-4">
-              <button
-                type="button"
-                onClick={sectionLevel === 'parent' ? setParentStartPosition : setChildStartPosition}
-                className={`w-full p-3 text-left border-2 rounded-lg transition-all ${
-                  (sectionLevel === 'parent' && insertPosition?.type === 'start') ||
-                  (sectionLevel === 'child' && insertPosition?.type === 'child-start')
-                    ? 'border-blue-500 bg-blue-50'
-                    : 'border-slate-200 hover:border-blue-300'
-                }`}
-              >
-                <div className="flex items-center gap-2">
-                  <ArrowUp className="w-4 h-4 text-blue-600" />
-                  <span className="font-medium">
-                    {sectionLevel === 'parent'
-                      ? 'Add at the beginning'
-                      : `Add at the beginning of ${selectedParentDetails?.name || 'the selected parent'}`
-                    }
-                  </span>
-                </div>
-              </button>
+          <div className="space-y-6">
+            <div>
+              <p className="text-slate-700 font-medium mb-2">
+                Where should "{sectionName}" be placed?
+              </p>
+              <p className="text-sm text-slate-500">
+                Choose a position relative to an existing section
+              </p>
+            </div>
 
-              <div className="space-y-2">
-                <label className="block text-sm font-semibold text-slate-700">
-                  Add after an existing {sectionLevel === 'parent' ? 'parent section' : 'child of this parent'}
-                </label>
-                <select
-                  value={insertPosition?.type === 'after' ? insertPosition.sectionKey : ''}
-                  onChange={(e) => handleAfterSelection(e.target.value)}
-                  disabled={afterOptions.length === 0}
-                  className="w-full p-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
+            {/* Position Type Selection */}
+            <div className="space-y-3">
+              <label className="block text-sm font-semibold text-slate-700 mb-2">
+                Position Type
+              </label>
+
+              <div className="grid grid-cols-3 gap-2">
+                <button
+                  type="button"
+                  onClick={() => handlePositionTypeChange('before')}
+                  className={`p-3 border-2 rounded-lg transition-all text-center ${
+                    positionType === 'before'
+                      ? 'border-blue-500 bg-blue-50 text-blue-700'
+                      : 'border-slate-200 hover:border-blue-300 text-slate-700'
+                  }`}
                 >
-                  <option value="" disabled>
-                    Select section to add after
-                  </option>
-                  {afterOptions.map(section => (
-                    <option key={section.key} value={section.key}>
-                      {section.name}
-                    </option>
-                  ))}
-                </select>
-                {sectionLevel === 'child' && afterOptions.length === 0 && (
-                  <p className="text-sm text-amber-600 bg-amber-50 p-3 rounded-lg">
-                    Select a parent to see where this child can be inserted after.
-                  </p>
-                )}
+                  <ArrowUp className="w-4 h-4 mx-auto mb-1" />
+                  <div className="text-xs font-medium">Before</div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => handlePositionTypeChange('after')}
+                  className={`p-3 border-2 rounded-lg transition-all text-center ${
+                    positionType === 'after'
+                      ? 'border-blue-500 bg-blue-50 text-blue-700'
+                      : 'border-slate-200 hover:border-blue-300 text-slate-700'
+                  }`}
+                >
+                  <ArrowDown className="w-4 h-4 mx-auto mb-1" />
+                  <div className="text-xs font-medium">After</div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => handlePositionTypeChange('first-child')}
+                  className={`p-3 border-2 rounded-lg transition-all text-center ${
+                    positionType === 'first-child'
+                      ? 'border-blue-500 bg-blue-50 text-blue-700'
+                      : 'border-slate-200 hover:border-blue-300 text-slate-700'
+                  }`}
+                >
+                  <Plus className="w-4 h-4 mx-auto mb-1" />
+                  <div className="text-xs font-medium">First Child</div>
+                </button>
               </div>
             </div>
+
+            {/* Section Selection */}
+            <div className="space-y-2">
+              <label className="block text-sm font-semibold text-slate-700">
+                {positionType === 'before' && 'Select section to insert before'}
+                {positionType === 'after' && 'Select section to insert after'}
+                {positionType === 'first-child' && 'Select parent section'}
+              </label>
+              <select
+                value={selectedSection || ''}
+                onChange={(e) => handleSectionSelect(e.target.value)}
+                disabled={templateSections.length === 0}
+                className="w-full p-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
+              >
+                <option value="" disabled>
+                  {positionType === 'before' && 'Choose a section...'}
+                  {positionType === 'after' && 'Choose a section...'}
+                  {positionType === 'first-child' && 'Choose a parent section...'}
+                </option>
+                {templateSections.map(section => (
+                  <option key={section.key} value={section.key}>
+                    {section.name}
+                    {section.level === 'child' && section.parentKey ? ' (child)' : ''}
+                  </option>
+                ))}
+              </select>
+              {templateSections.length === 0 && (
+                <p className="text-sm text-amber-600 bg-amber-50 p-3 rounded-lg">
+                  No existing sections found in this template. Please add at least one section first.
+                </p>
+              )}
+            </div>
+
+            {/* Visual Preview */}
+            {insertPosition && selectedSection && (
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                <p className="text-sm font-medium text-blue-900 mb-1">Preview</p>
+                <p className="text-xs text-blue-700">
+                  "{sectionName}" will be inserted{' '}
+                  {positionType === 'before' && 'before'}
+                  {positionType === 'after' && 'after'}
+                  {positionType === 'first-child' && 'as the first child of'}{' '}
+                  "{templateSections.find(s => s.key === selectedSection)?.name}"
+                </p>
+              </div>
+            )}
+
             {!insertPosition && (
               <p className="text-sm text-amber-600 bg-amber-50 p-3 rounded-lg">
-                Please select a position for the new section
+                Please select a section to determine the position
               </p>
             )}
           </div>
@@ -340,7 +306,7 @@ const AddSectionModal = ({
               onClick={handleNext}
               disabled={
                 (step === 1 && !selectedTemplate) ||
-                (step === 2 && (!sectionName.trim() || (sectionLevel === 'child' && !parentSection)))
+                (step === 2 && !sectionName.trim())
               }
               className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
@@ -349,7 +315,7 @@ const AddSectionModal = ({
           ) : (
             <button
               onClick={handleSubmit}
-              disabled={!insertPosition}
+              disabled={!insertPosition || !selectedSection}
               className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
             >
               <Plus className="w-4 h-4" />

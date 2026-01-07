@@ -95,7 +95,7 @@ const SummarizerPrototype = () => {
   // Copy modals state
   const [showCopyDoctorModal, setShowCopyDoctorModal] = useState(false);
   const [copySourceDoctor, setCopySourceDoctor] = useState(null);
-  const [selectedSummarizers, setSelectedSummarizers] = useState([]);
+  const [selectedSummarizer, setSelectedSummarizer] = useState(null);
   const [targetDoctorEmails, setTargetDoctorEmails] = useState(['']);
   const [targetEHR, setTargetEHR] = useState('');
   
@@ -898,19 +898,13 @@ const SummarizerPrototype = () => {
 
   const handleCopySummarizer = (doctor) => {
     setCopySourceDoctor(doctor);
-    setSelectedSummarizers([]);
+    setSelectedSummarizer(null);
     setShowCopySummarizerModal(true);
     setOpenDropdown(null);
   };
 
-  const toggleSummarizerSelection = (summarizerId) => {
-    setSelectedSummarizers(prev => {
-      if (prev.includes(summarizerId)) {
-        return prev.filter(id => id !== summarizerId);
-      } else {
-        return [...prev, summarizerId];
-      }
-    });
+  const selectSummarizer = (summarizerId) => {
+    setSelectedSummarizer(summarizerId);
   };
 
   const handleCopyDoctorConfig = (doctor) => {
@@ -4417,28 +4411,21 @@ const SummarizerPrototype = () => {
       
       if (editingSummarizerId) {
         // Update existing summarizer
-        const existingSummarizer = createdSummarizers.find(s => s.id === editingSummarizerId);
-        const wasPending = existingSummarizer && existingSummarizer.status === 'pending';
-        
         const updatedSummarizer = {
           ...formData,
           id: editingSummarizerId,
           doctorId: selectedDoctor?.id,
           doctorName: selectedDoctor?.name,
           ehr: selectedDoctor?.ehr,
-          active: true, // Activate if it was pending
-          status: 'active' // Change status from pending to active
+          active: true,
+          status: 'active'
         };
 
         setCreatedSummarizers(prev => prev.map(s =>
           s.id === editingSummarizerId ? updatedSummarizer : s
         ));
 
-        const statusMessage = wasPending 
-          ? 'Summarizer activated successfully!\n\n✓ Draft reviewed and activated\n✓ Configuration saved\n✓ Ready for immediate use'
-          : 'Summarizer updated successfully!\n\n✓ Configuration saved\n✓ Ready for immediate use';
-
-        alert(statusMessage);
+        alert('Summarizer updated successfully!\n\n✓ Configuration saved\n✓ Ready for immediate use');
         setEditingSummarizerId(null);
         setCurrentView('doctors');
       } else {
@@ -4463,132 +4450,87 @@ const SummarizerPrototype = () => {
 
     return (
       <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50">
-        {/* Main Content Area */}
-        <div className="flex-1 overflow-y-auto max-w-4xl mx-auto px-6 py-8">
-          <div className="mb-8">
-            {(
-              <button
-                onClick={handleCancelCreate}
-                className="flex items-center gap-2 text-slate-600 hover:text-slate-800 mb-4 transition-colors"
-              >
-                <ChevronRight className="w-4 h-4 rotate-180" />
-                Back to Doctors
-              </button>
-            )}
+        {/* Sticky Header Section */}
+        <div className="sticky top-0 z-40 bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50 border-b border-slate-200/50 shadow-sm">
+          <div className="max-w-4xl mx-auto px-6 py-4">
+            <button
+              onClick={handleCancelCreate}
+              className="flex items-center gap-2 text-slate-600 hover:text-slate-800 mb-3 transition-colors"
+            >
+              <ChevronRight className="w-4 h-4 rotate-180" />
+              Back to Doctors
+            </button>
             
-            <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-200/50">
-              <div className="flex items-center gap-4">
-                <div className="w-12 h-12 bg-gradient-to-r from-blue-500 to-purple-500 rounded-xl flex items-center justify-center text-white font-semibold text-lg">
-                  {selectedDoctor?.name.split(' ').map(n => n[0]).join('')}
+            <div className="bg-white rounded-2xl p-4 shadow-sm border border-slate-200/50">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-4">
+                  <div className="w-12 h-12 bg-gradient-to-r from-blue-500 to-purple-500 rounded-xl flex items-center justify-center text-white font-semibold text-lg">
+                    {selectedDoctor?.name.split(' ').map(n => n[0]).join('')}
+                  </div>
+                  <div>
+                    <h1 className="text-xl font-bold text-slate-800">
+                      {selectedDoctor?.name}
+                    </h1>
+                    <p className="text-sm text-slate-500">
+                      {selectedDoctor?.ehr} EHR
+                    </p>
+                  </div>
                 </div>
-                <div>
-                  <h1 className="text-2xl font-bold text-slate-800">
-                    {(() => {
-                      if (editingSummarizerId) {
-                        const currentSummarizer = createdSummarizers.find(s => s.id === editingSummarizerId);
-                        if (currentSummarizer && currentSummarizer.status === 'pending') {
-                          return '📝 Review & Activate Draft Summarizer';
-                        }
-                        return 'Edit Summarizer';
-                      }
-                      return 'Create New Summarizer';
-                    })()}
-                  </h1>
-                  <p className="text-slate-600">
-                    for {selectedDoctor?.name} • {selectedDoctor?.ehr} EHR
-                    {(() => {
-                      if (editingSummarizerId) {
-                        const currentSummarizer = createdSummarizers.find(s => s.id === editingSummarizerId);
-                        if (currentSummarizer && currentSummarizer.status === 'pending') {
-                          return ' • ⚠️ Draft Mode - Not Active Yet';
-                        }
-                      }
-                      return '';
-                    })()}
-                  </p>
+                <div className="text-right">
+                  <span className="inline-flex items-center gap-2 px-3 py-1.5 bg-blue-50 text-blue-700 rounded-lg text-sm font-medium">
+                    {editingSummarizerId ? '✏️ Edit Summarizer' : '➕ Create New Summarizer'}
+                  </span>
                 </div>
               </div>
             </div>
 
-            {/* Active & Pending Summarizers Bar */}
+            {/* Summarizers Bar */}
             {(() => {
-              const activeSummarizers = createdSummarizers.filter(s => s.doctorId === selectedDoctor?.id && s.active !== false && s.status !== 'pending');
-              const pendingSummarizers = createdSummarizers.filter(s => s.doctorId === selectedDoctor?.id && (s.status === 'pending' || s.active === false));
+              const doctorSummarizers = createdSummarizers.filter(s => s.doctorId === selectedDoctor?.id);
               
               return (
-                <div className="space-y-4">
-                  {/* Active Summarizers Section */}
-                  <div className="bg-gradient-to-r from-emerald-50/80 to-green-50/80 border border-emerald-200 rounded-2xl p-4 shadow-sm">
-                    <div className="flex items-center justify-between mb-3">
-                      <h3 className="text-sm font-bold text-emerald-800 uppercase tracking-wide flex items-center gap-2">
-                        <span className="h-3 w-3 rounded-full bg-emerald-500" />
-                        Active Summarizers
-                      </h3>
-                      <span className="text-xs font-semibold text-emerald-700 bg-white px-3 py-1 rounded-full border border-emerald-300">
-                        {activeSummarizers.length} active
-                      </span>
-                    </div>
-                    <div className="flex flex-wrap gap-2">
-                      {activeSummarizers.length > 0 ? (
-                        activeSummarizers.map((summary) => (
-                          <span
-                            key={summary.id}
-                            className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white text-slate-800 border border-emerald-200 text-sm font-semibold shadow-sm hover:shadow-md transition-shadow cursor-pointer"
-                            title={summary.purpose || summary.name}
-                            onClick={() => {
-                              setEditingSummarizerId(summary.id);
-                              setFormData(summary);
-                            }}
-                          >
-                            <span className="h-2 w-2 rounded-full bg-emerald-500" />
-                            <span>{summary.name}</span>
-                          </span>
-                        ))
-                      ) : (
-                        <span className="text-sm text-slate-600 italic">No active summarizers yet</span>
-                      )}
-                    </div>
+                <div className="mt-3 bg-gradient-to-r from-emerald-50/90 to-green-50/90 border border-emerald-200 rounded-xl p-3 shadow-sm backdrop-blur-sm">
+                  <div className="flex items-center justify-between mb-2">
+                    <h3 className="text-xs font-bold text-emerald-800 uppercase tracking-wide flex items-center gap-2">
+                      <span className="h-2 w-2 rounded-full bg-emerald-500" />
+                      Summarizers
+                    </h3>
+                    <span className="text-xs font-semibold text-emerald-700 bg-white px-2 py-0.5 rounded-full border border-emerald-300">
+                      {doctorSummarizers.length} total
+                    </span>
                   </div>
-
-                  {/* Pending Summarizers Section */}
-                  {pendingSummarizers.length > 0 && (
-                    <div className="bg-gradient-to-r from-amber-50/80 to-yellow-50/80 border-2 border-amber-300 rounded-2xl p-4 shadow-sm">
-                      <div className="flex items-center justify-between mb-3">
-                        <h3 className="text-sm font-bold text-amber-800 uppercase tracking-wide flex items-center gap-2">
-                          <span className="h-3 w-3 rounded-full bg-amber-500 animate-pulse" />
-                          Pending Summarizers (Drafts)
-                        </h3>
-                        <span className="text-xs font-semibold text-amber-700 bg-white px-3 py-1 rounded-full border border-amber-300">
-                          {pendingSummarizers.length} pending
+                  <div className="flex flex-wrap gap-1.5 max-h-16 overflow-y-auto">
+                    {doctorSummarizers.length > 0 ? (
+                      doctorSummarizers.map((summary) => (
+                        <span
+                          key={summary.id}
+                          className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold shadow-sm hover:shadow-md transition-all cursor-pointer ${
+                            editingSummarizerId === summary.id
+                              ? 'bg-blue-500 text-white border border-blue-600'
+                              : 'bg-white text-slate-700 border border-emerald-200 hover:border-emerald-300'
+                          }`}
+                          title={summary.purpose || summary.name}
+                          onClick={() => {
+                            setEditingSummarizerId(summary.id);
+                            setFormData(summary);
+                          }}
+                        >
+                          <span className={`h-1.5 w-1.5 rounded-full ${editingSummarizerId === summary.id ? 'bg-white' : 'bg-emerald-500'}`} />
+                          <span>{summary.name}</span>
                         </span>
-                      </div>
-                      <p className="text-xs text-amber-700 mb-3 italic">
-                        ⚠️ These summarizers are in draft mode. Click to edit and save to activate them.
-                      </p>
-                      <div className="flex flex-wrap gap-2">
-                        {pendingSummarizers.map((summary) => (
-                          <span
-                            key={summary.id}
-                            className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white text-slate-800 border-2 border-amber-400 text-sm font-semibold shadow-sm hover:shadow-md transition-all cursor-pointer hover:border-amber-500"
-                            title={`Draft: ${summary.purpose || summary.name} - Click to review and activate`}
-                            onClick={() => {
-                              setEditingSummarizerId(summary.id);
-                              setFormData(summary);
-                            }}
-                          >
-                            <span className="h-2 w-2 rounded-full bg-amber-500 animate-pulse" />
-                            <span>{summary.name}</span>
-                            <span className="text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full font-bold">DRAFT</span>
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                  )}
+                      ))
+                    ) : (
+                      <span className="text-xs text-slate-500 italic">No summarizers yet</span>
+                    )}
+                  </div>
                 </div>
               );
             })()}
           </div>
+        </div>
 
+        {/* Scrollable Form Content */}
+        <div className="max-w-4xl mx-auto px-6 py-6">
           <form onSubmit={handleFormSubmit} className="space-y-8">
             {/* Prominent Copy Button */}
             {(
@@ -4925,7 +4867,7 @@ const SummarizerPrototype = () => {
                     </label>
                       <div>
                     <p className="text-xs text-slate-500 mb-2">
-                      Select a resource. Options show resource name with available filters. Only the editable filters shown below (for example, date ranges) can be changed; other filters appear in Advanced Settings.
+                      Choose what data to pull. You can adjust date ranges below; other filters are in Advanced Settings.
                     </p>
                             <select
                               value={formData.selectedResource}
@@ -4978,11 +4920,11 @@ const SummarizerPrototype = () => {
                           if (filter.label) return filter.label;
                           switch (filter.type) {
                             case 'howFarBack':
-                              return 'How Far Back';
+                              return 'Date Range';
                             case 'count':
                               return 'Number of Documents';
                             case 'retrievalMethod':
-                              return 'Retrieval Method';
+                              return 'Records to Pull';
                             case 'singleDate':
                               return 'Date';
                             default:
@@ -5002,8 +4944,8 @@ const SummarizerPrototype = () => {
                     </div>
                             <p className="text-xs text-slate-500">
                               {editableFilterLabels.length > 0
-                                ? `Editable filters: ${editableFilterLabels.join(', ')}. File format is auto-set based on the selected resource. Other filters are shown in Advanced Settings for transparency.`
-                                : 'File format is auto-set based on the selected resource. Other filters are shown in Advanced Settings for transparency.'}
+                                ? `You can edit: ${editableFilterLabels.join(', ')}. Other settings are in Advanced Settings.`
+                                : 'All settings for this resource are in Advanced Settings.'}
                             </p>
                             {resource.fileFormat && (
                               <p className="text-xs text-slate-600 mt-2 font-medium">
@@ -5132,7 +5074,7 @@ const SummarizerPrototype = () => {
                                         </div>
                                         {filter.default && filter.default.daysBackTo !== undefined && (
                                           <div>
-                                            <label className="block text-xs text-slate-600 mb-1">To (Days Ago)</label>
+                                            <label className="block text-xs text-slate-600 mb-1">Exclude Recent Days</label>
                                             <input
                                               type="number"
                                               min="0"
@@ -5182,8 +5124,8 @@ const SummarizerPrototype = () => {
                                       </div>
                                       <p className="mt-2 text-xs text-slate-500">
                                         {filter.default && filter.default.yearsBack 
-                                          ? `Default: ${filter.default.yearsBack} year${filter.default.yearsBack > 1 ? 's' : ''} back${filter.default.daysBackTo !== undefined ? `, to ${filter.default.daysBackTo} days ago` : ''}${filter.default.toRecent ? ', to recent note date' : ''}`
-                                          : 'Specify how far back to retrieve historical data.'}
+                                          ? `Pulls records from ${filter.default.yearsBack} year${filter.default.yearsBack > 1 ? 's' : ''} ago${filter.default.daysBackTo !== undefined ? `, excluding the last ${filter.default.daysBackTo} days` : ''}${filter.default.toRecent ? ', up to the most recent note' : ''}`
+                                          : 'Set how far back to pull historical records.'}
                                       </p>
                                     </div>
                                   );
@@ -5212,7 +5154,13 @@ const SummarizerPrototype = () => {
                                               className="w-4 h-4 text-blue-600 focus:ring-blue-500"
                                             />
                                             <span className="text-sm text-slate-700">
-                                              {option === 'latest' ? 'Latest note only' : option === 'all' ? 'All notes in period' : option === 'count' ? 'Specific count of notes' : option}
+                                              {option === 'latest'
+                                                ? 'Most recent only'
+                                                : option === 'all'
+                                                ? 'All within date range'
+                                                : option === 'count'
+                                                ? 'Specific number'
+                                                : option}
                                             </span>
                                           </label>
                                         ))}
@@ -5233,9 +5181,44 @@ const SummarizerPrototype = () => {
                               />
                         </div>
                                         )}
+                                        {formData.retrievalMethod === 'all' && (
+                                          <div className="ml-6 mt-3 space-y-3">
+                                            <div>
+                                              <label className="block text-xs text-slate-600 mb-1">From date</label>
+                                              <input
+                                                type="date"
+                                                value={formData.dateFrom || ''}
+                                                onChange={(e) =>
+                                                  setFormData({
+                                                    ...formData,
+                                                    dateFrom: e.target.value
+                                                  })
+                                                }
+                                                className="w-full p-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
+                                              />
+                                            </div>
+                                            <div>
+                                              <label className="block text-xs text-slate-600 mb-1">To date</label>
+                                              <input
+                                                type="date"
+                                                value={formData.dateTo || ''}
+                                                onChange={(e) =>
+                                                  setFormData({
+                                                    ...formData,
+                                                    dateTo: e.target.value
+                                                  })
+                                                }
+                                                className="w-full p-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
+                                              />
+                                            </div>
+                                            <p className="text-xs text-slate-500">
+                                              Choose a start and end date for the retrieval window.
+                                            </p>
+                                          </div>
+                                        )}
                                       </div>
                                       <p className="mt-2 text-xs text-slate-500">
-                                        Select how to retrieve documents: latest note only, all notes in period, or specific count of notes.
+                                        Select how to retrieve documents: latest note only, all notes in date range, or specific count of notes.
                                       </p>
                         </div>
                                   );
@@ -5679,55 +5662,6 @@ const SummarizerPrototype = () => {
                               </div>
                             );
                           })()}
-                          
-                          {/* Part 2: Pipeline Settings */}
-                          <div className="space-y-4 pt-6">
-                            <div className="mb-4">
-                              <h3 className="text-base font-semibold text-slate-800 mb-1">Pipeline Settings</h3>
-                              <p className="text-xs text-slate-500">Configure pipeline behavior and dependencies</p>
-                    </div>
-
-                            {/* depends_on_summarisers */}
-                            <div>
-                              <label className="block text-sm font-medium text-slate-700 mb-2">
-                                Depends on Summarisers
-                              </label>
-                              <select
-                                multiple
-                                value={formData.depends_on_summarisers}
-                                disabled={!advancedSettingsUnlocked}
-                                onClick={() => {
-                                  if (!advancedSettingsUnlocked) {
-                                    setShowAdvancedSettingsPopup(true);
-                                  }
-                                }}
-                                onChange={(e) => {
-                                  if (advancedSettingsUnlocked) {
-                                    const selected = Array.from(e.target.selectedOptions, option => option.value);
-                                    setFormData({
-                                      ...formData,
-                                      depends_on_summarisers: selected
-                                    });
-                                    setAdvancedSettingsEdited(true);
-                                  }
-                                }}
-                                className={`w-full p-3 border rounded-xl transition-colors min-h-[100px] ${
-                                  advancedSettingsUnlocked
-                                    ? 'border-slate-200 bg-white text-slate-800 focus:ring-2 focus:ring-blue-500 focus:border-blue-500'
-                                    : 'border-slate-300 bg-slate-100 text-slate-500 cursor-pointer'
-                                }`}
-                              >
-                                {getSummariserOptions().map(option => (
-                                  <option key={option.id} value={option.id}>
-                                    {option.label}
-                                  </option>
-                                ))}
-                              </select>
-                              <p className="text-xs text-slate-500 mt-1">
-                                Select summarisers that this resource depends on (hold Ctrl/Cmd to select multiple). Only summarisers for the same doctor are shown.
-                              </p>
-                            </div>
-                          </div>
                             </div>
                           )}
                         </div>
@@ -6323,47 +6257,11 @@ const SummarizerPrototype = () => {
                 Cancel
               </button>
               
-              {/* Show "Discard Draft" button only for pending summarizers */}
-              {(() => {
-                if (editingSummarizerId) {
-                  const currentSummarizer = createdSummarizers.find(s => s.id === editingSummarizerId);
-                  if (currentSummarizer && currentSummarizer.status === 'pending') {
-                    return (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          if (confirm('Are you sure you want to discard this draft summarizer? This action cannot be undone.')) {
-                            // Remove the pending summarizer
-                            setCreatedSummarizers(prev => prev.filter(s => s.id !== editingSummarizerId));
-                            setEditingSummarizerId(null);
-                            setCurrentView('doctors');
-                            alert('Draft summarizer discarded successfully.');
-                          }
-                        }}
-                        className="px-6 py-3 border-2 border-red-300 text-red-600 rounded-xl font-medium hover:bg-red-50 transition-colors"
-                      >
-                        🗑️ Discard Draft
-                      </button>
-                    );
-                  }
-                }
-                return null;
-              })()}
-              
               <button
                 type="submit"
                 className="px-8 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-xl font-medium transition-all duration-200 shadow-lg hover:shadow-xl"
               >
-                {(() => {
-                  if (editingSummarizerId) {
-                    const currentSummarizer = createdSummarizers.find(s => s.id === editingSummarizerId);
-                    if (currentSummarizer && currentSummarizer.status === 'pending') {
-                      return '✅ Save & Activate Summarizer';
-                    }
-                    return 'Update Summarizer';
-                  }
-                  return 'Add Summarizer';
-                })()}
+                {editingSummarizerId ? 'Update Summarizer' : 'Add Summarizer'}
               </button>
             </div>
           </form>
@@ -6399,7 +6297,7 @@ const SummarizerPrototype = () => {
                       const doctorId = e.target.value;
                       const doctor = doctors.find(d => d.id === parseInt(doctorId));
                       setCopySourceDoctorForSummarizer(doctor || null);
-                      setSelectedSummarizers([]); // Clear selection when doctor changes
+                      setSelectedSummarizer(null); // Clear selection when doctor changes
                     }}
                     className="w-full p-3 border-2 border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                   >
@@ -6424,7 +6322,7 @@ const SummarizerPrototype = () => {
                 {copySourceDoctorForSummarizer && (
                   <div className="mb-6">
                     <label className="block text-sm font-semibold text-slate-700 mb-3">
-                      Select Summarizer to Copy * {selectedSummarizers.length > 0 && <span className="text-blue-600">({selectedSummarizers.length} selected)</span>}
+                      Select Summarizer to Copy *
                     </label>
                     <div className="space-y-2 max-h-96 overflow-y-auto">
                       {createdSummarizers.filter(s => s.doctorId === copySourceDoctorForSummarizer.id).length > 0 ? (
@@ -6437,25 +6335,26 @@ const SummarizerPrototype = () => {
                       <div
                         key={summarizer.id}
                         className={`border-2 rounded-xl p-4 cursor-pointer transition-all ${
-                          selectedSummarizers.includes(summarizer.id)
+                          selectedSummarizer === summarizer.id
                             ? 'border-blue-500 bg-blue-50'
                             : 'border-slate-200 hover:border-blue-300 hover:bg-blue-50/30'
                         }`}
                         onClick={(e) => {
-                          // Only toggle if clicking on the card, not the checkbox
-                          if (e.target.type !== 'checkbox') {
-                            toggleSummarizerSelection(summarizer.id);
+                          // Only select if clicking on the card, not the radio
+                          if (e.target.type !== 'radio') {
+                            selectSummarizer(summarizer.id);
                           }
                         }}
                           >
                             <div className="flex items-start justify-between">
                           <div className="flex items-start gap-3 flex-1">
                             <input
-                              type="checkbox"
-                              checked={selectedSummarizers.includes(summarizer.id)}
-                              onChange={() => toggleSummarizerSelection(summarizer.id)}
+                              type="radio"
+                              name="summarizer-selection"
+                              checked={selectedSummarizer === summarizer.id}
+                              onChange={() => selectSummarizer(summarizer.id)}
                               onClick={(e) => e.stopPropagation()}
-                              className="w-4 h-4 text-blue-600 rounded mt-1 cursor-pointer"
+                              className="w-4 h-4 text-blue-600 mt-1 cursor-pointer"
                             />
                               <div className="flex-1">
                                 <div className="flex items-center gap-3 mb-2">
@@ -6514,11 +6413,11 @@ const SummarizerPrototype = () => {
                 </div>
 
                 {/* Action Buttons */}
-                <div className="flex gap-3 justify-end">
+                <div className="flex gap-3 justify-end mt-6">
                   <button
                     onClick={() => {
                       setShowCopySummarizerModal(false);
-                      setSelectedSummarizers([]);
+                      setSelectedSummarizer(null);
                       setCopySourceDoctorForSummarizer(null);
                     }}
                     className="px-6 py-2.5 border-2 border-slate-300 text-slate-700 rounded-xl font-semibold hover:bg-slate-50 transition-colors"
@@ -6532,162 +6431,89 @@ const SummarizerPrototype = () => {
                         return;
                       }
                       
-                      if (selectedSummarizers.length === 0) {
-                        alert('Please select at least one summarizer to copy');
+                      if (!selectedSummarizer) {
+                        alert('Please select a summarizer to copy');
                         return;
                       }
                       
-                      // If only one selected, copy it directly to form
-                      if (selectedSummarizers.length === 1) {
-                        const summarizerId = selectedSummarizers[0];
-                        const summarizer = createdSummarizers.find(s => s.id === summarizerId);
-                        if (summarizer) {
-                          const sourceDoctor = doctors.find(d => d.id === summarizer.doctorId);
-                          const isSameEHR = sourceDoctor?.ehr === selectedDoctor?.ehr;
-                          
-                          // Create a pending summarizer (draft) with copied data
-                          const pendingSummarizerId = `summarizer-pending-${Date.now()}`;
-                          const pendingSummarizer = {
-                            name: summarizer.name,
-                            purpose: summarizer.purpose,
-                            pullFromEHR: summarizer.pullFromEHR,
-                            allowUpload: summarizer.allowUpload,
-                            allowText: summarizer.allowText,
-                            useSeparatePrompts: summarizer.useSeparatePrompts,
-                            commonPrompt: summarizer.commonPrompt || '',
-                            // If EHR doesn't match, keep data source config empty
-                            selectedResource: isSameEHR ? (summarizer.selectedResource || '') : '',
-                            dataSelection: isSameEHR ? (summarizer.dataSelection || 'count') : 'count',
-                            documentCount: isSameEHR ? (summarizer.documentCount || 5) : 5,
-                            dateFrom: isSameEHR ? (summarizer.dateFrom || '') : '',
-                            dateTo: isSameEHR ? (summarizer.dateTo || '') : '',
-                            singleDate: isSameEHR ? (summarizer.singleDate || '') : '',
-                            organizationIds: isSameEHR ? (summarizer.organizationIds || '') : '',
-                            templateIds: isSameEHR ? (summarizer.templateIds || '') : '',
-                            keywords: isSameEHR ? (summarizer.keywords || '') : '',
-                            visitTypes: isSameEHR ? (summarizer.visitTypes || '') : '',
-                            sortingDirection: isSameEHR ? (summarizer.sortingDirection || '') : '',
-                            documentTypes: isSameEHR ? (summarizer.documentTypes || '') : '',
-                            fileType: isSameEHR ? (summarizer.fileType || '') : '',
-                            ehrPrompt: summarizer.ehrPrompt || '',
-                            uploadPrompt: summarizer.uploadPrompt || '',
-                            textPrompt: summarizer.textPrompt || '',
-                            primaryModel: summarizer.primaryModel || '',
-                            fallbackModel: summarizer.fallbackModel || '',
-                            avg_summarization_time: summarizer.avg_summarization_time || 60,
-                            create_intermediate: summarizer.create_intermediate !== undefined ? summarizer.create_intermediate : true,
-                            depends_on_summarisers: summarizer.depends_on_summarisers || [],
-                            active: false, // Mark as pending/draft
-                            status: 'pending', // Explicit pending status
-                            variables: summarizer.variables || [],
-                            howFarBackYears: isSameEHR ? (summarizer.howFarBackYears || 0) : 0,
-                            howFarBackMonths: isSameEHR ? (summarizer.howFarBackMonths || 0) : 0,
-                            howFarBackDays: isSameEHR ? (summarizer.howFarBackDays || 0) : 0,
-                            howFarBackToDays: isSameEHR ? (summarizer.howFarBackToDays || null) : null,
-                            toRecent: isSameEHR ? (summarizer.toRecent || false) : false,
-                            retrievalMethod: isSameEHR ? (summarizer.retrievalMethod || 'latest') : 'latest',
-                            id: pendingSummarizerId,
-                            doctorId: selectedDoctor?.id,
-                            doctorName: selectedDoctor?.name,
-                            ehr: selectedDoctor?.ehr
-                          };
-                          
-                          // Add the pending summarizer to state
-                          setCreatedSummarizers(prev => [...prev, pendingSummarizer]);
-                          
-                          // Set the form to edit this pending summarizer
-                          setFormData(pendingSummarizer);
-                          setEditingSummarizerId(pendingSummarizerId);
-                          
-                          setShowCopySummarizerModal(false);
-                          setSelectedSummarizers([]);
-                          setCopySourceDoctorForSummarizer(null);
-                          
-                          if (!isSameEHR) {
-                            alert('Summarizer copied as DRAFT! Note: EHR resource configuration (data source config section) was not copied because the source doctor uses a different EHR system. Please configure the data source section for this EHR and click Save to activate.');
-                          } else {
-                            alert('Summarizer copied as DRAFT! The configuration has been pre-filled. Please review and click Save to activate it.');
-                          }
-                        }
-                      } else {
-                        // Multiple selected - create all as pending drafts
-                        const pendingSummarizers = selectedSummarizers.map((summarizerId, index) => {
-                          const summarizer = createdSummarizers.find(s => s.id === summarizerId);
-                          if (!summarizer) return null;
-                          
-                          const sourceDoctor = doctors.find(d => d.id === summarizer.doctorId);
-                          const isSameEHR = sourceDoctor?.ehr === selectedDoctor?.ehr;
-                          const pendingSummarizerId = `summarizer-pending-${Date.now()}-${index}`;
-                          
-                          return {
-                            name: summarizer.name,
-                            purpose: summarizer.purpose,
-                            pullFromEHR: summarizer.pullFromEHR,
-                            allowUpload: summarizer.allowUpload,
-                            allowText: summarizer.allowText,
-                            useSeparatePrompts: summarizer.useSeparatePrompts,
-                            commonPrompt: summarizer.commonPrompt || '',
-                            selectedResource: isSameEHR ? (summarizer.selectedResource || '') : '',
-                            dataSelection: isSameEHR ? (summarizer.dataSelection || 'count') : 'count',
-                            documentCount: isSameEHR ? (summarizer.documentCount || 5) : 5,
-                            dateFrom: isSameEHR ? (summarizer.dateFrom || '') : '',
-                            dateTo: isSameEHR ? (summarizer.dateTo || '') : '',
-                            singleDate: isSameEHR ? (summarizer.singleDate || '') : '',
-                            organizationIds: isSameEHR ? (summarizer.organizationIds || '') : '',
-                            templateIds: isSameEHR ? (summarizer.templateIds || '') : '',
-                            keywords: isSameEHR ? (summarizer.keywords || '') : '',
-                            visitTypes: isSameEHR ? (summarizer.visitTypes || '') : '',
-                            sortingDirection: isSameEHR ? (summarizer.sortingDirection || '') : '',
-                            documentTypes: isSameEHR ? (summarizer.documentTypes || '') : '',
-                            fileType: isSameEHR ? (summarizer.fileType || '') : '',
-                            ehrPrompt: summarizer.ehrPrompt || '',
-                            uploadPrompt: summarizer.uploadPrompt || '',
-                            textPrompt: summarizer.textPrompt || '',
-                            primaryModel: summarizer.primaryModel || '',
-                            fallbackModel: summarizer.fallbackModel || '',
-                            avg_summarization_time: summarizer.avg_summarization_time || 60,
-                            create_intermediate: summarizer.create_intermediate !== undefined ? summarizer.create_intermediate : true,
-                            depends_on_summarisers: summarizer.depends_on_summarisers || [],
-                            active: false,
-                            status: 'pending',
-                            variables: summarizer.variables || [],
-                            howFarBackYears: isSameEHR ? (summarizer.howFarBackYears || 0) : 0,
-                            howFarBackMonths: isSameEHR ? (summarizer.howFarBackMonths || 0) : 0,
-                            howFarBackDays: isSameEHR ? (summarizer.howFarBackDays || 0) : 0,
-                            howFarBackToDays: isSameEHR ? (summarizer.howFarBackToDays || null) : null,
-                            toRecent: isSameEHR ? (summarizer.toRecent || false) : false,
-                            retrievalMethod: isSameEHR ? (summarizer.retrievalMethod || 'latest') : 'latest',
-                            id: pendingSummarizerId,
-                            doctorId: selectedDoctor?.id,
-                            doctorName: selectedDoctor?.name,
-                            ehr: selectedDoctor?.ehr
-                          };
-                        }).filter(Boolean);
-
-                        // Add all pending summarizers to state
-                        setCreatedSummarizers(prev => [...prev, ...pendingSummarizers]);
-
-                        // Open the first one for editing
-                        if (pendingSummarizers[0]) {
-                          setFormData(pendingSummarizers[0]);
-                          setEditingSummarizerId(pendingSummarizers[0].id);
-                        }
-
+                      const summarizer = createdSummarizers.find(s => s.id === selectedSummarizer);
+                      if (summarizer) {
+                        const sourceDoctor = doctors.find(d => d.id === summarizer.doctorId);
+                        const isSameEHR = sourceDoctor?.ehr === selectedDoctor?.ehr;
+                        
+                        // Create an active summarizer with copied data
+                        const newSummarizerId = `summarizer-${Date.now()}`;
+                        const newSummarizer = {
+                          name: summarizer.name,
+                          purpose: summarizer.purpose,
+                          pullFromEHR: summarizer.pullFromEHR,
+                          allowUpload: summarizer.allowUpload,
+                          allowText: summarizer.allowText,
+                          useSeparatePrompts: summarizer.useSeparatePrompts,
+                          commonPrompt: summarizer.commonPrompt || '',
+                          // If EHR doesn't match, keep data source config empty
+                          selectedResource: isSameEHR ? (summarizer.selectedResource || '') : '',
+                          dataSelection: isSameEHR ? (summarizer.dataSelection || 'count') : 'count',
+                          documentCount: isSameEHR ? (summarizer.documentCount || 5) : 5,
+                          dateFrom: isSameEHR ? (summarizer.dateFrom || '') : '',
+                          dateTo: isSameEHR ? (summarizer.dateTo || '') : '',
+                          singleDate: isSameEHR ? (summarizer.singleDate || '') : '',
+                          organizationIds: isSameEHR ? (summarizer.organizationIds || '') : '',
+                          templateIds: isSameEHR ? (summarizer.templateIds || '') : '',
+                          keywords: isSameEHR ? (summarizer.keywords || '') : '',
+                          visitTypes: isSameEHR ? (summarizer.visitTypes || '') : '',
+                          sortingDirection: isSameEHR ? (summarizer.sortingDirection || '') : '',
+                          documentTypes: isSameEHR ? (summarizer.documentTypes || '') : '',
+                          fileType: isSameEHR ? (summarizer.fileType || '') : '',
+                          ehrPrompt: summarizer.ehrPrompt || '',
+                          uploadPrompt: summarizer.uploadPrompt || '',
+                          textPrompt: summarizer.textPrompt || '',
+                          primaryModel: summarizer.primaryModel || '',
+                          fallbackModel: summarizer.fallbackModel || '',
+                          avg_summarization_time: summarizer.avg_summarization_time || 60,
+                          create_intermediate: summarizer.create_intermediate !== undefined ? summarizer.create_intermediate : true,
+                          depends_on_summarisers: summarizer.depends_on_summarisers || [],
+                          active: true, // Immediately active
+                          status: 'active',
+                          variables: summarizer.variables || [],
+                          howFarBackYears: isSameEHR ? (summarizer.howFarBackYears || 0) : 0,
+                          howFarBackMonths: isSameEHR ? (summarizer.howFarBackMonths || 0) : 0,
+                          howFarBackDays: isSameEHR ? (summarizer.howFarBackDays || 0) : 0,
+                          howFarBackToDays: isSameEHR ? (summarizer.howFarBackToDays || null) : null,
+                          toRecent: isSameEHR ? (summarizer.toRecent || false) : false,
+                          retrievalMethod: isSameEHR ? (summarizer.retrievalMethod || 'latest') : 'latest',
+                          id: newSummarizerId,
+                          doctorId: selectedDoctor?.id,
+                          doctorName: selectedDoctor?.name,
+                          ehr: selectedDoctor?.ehr
+                        };
+                        
+                        // Add the new summarizer to state
+                        setCreatedSummarizers(prev => [...prev, newSummarizer]);
+                        
+                        // Set the form to edit this summarizer
+                        setFormData(newSummarizer);
+                        setEditingSummarizerId(newSummarizerId);
+                        
                         setShowCopySummarizerModal(false);
-                        setSelectedSummarizers([]);
+                        setSelectedSummarizer(null);
                         setCopySourceDoctorForSummarizer(null);
                         
-                        alert(`${pendingSummarizers.length} summarizers copied as DRAFTS! The first one is opened for review. You can see all pending summarizers in the yellow section above. Click each to review and activate.`);
+                        if (!isSameEHR) {
+                          alert('Summarizer copied successfully! Note: EHR resource configuration was not copied because the source doctor uses a different EHR system. Please configure the data source section for this EHR.');
+                        } else {
+                          alert('Summarizer copied successfully! The configuration has been pre-filled and is ready for use.');
+                        }
                       }
                     }}
-                    disabled={!copySourceDoctorForSummarizer || selectedSummarizers.length === 0}
+                    disabled={!copySourceDoctorForSummarizer || !selectedSummarizer}
                     className={`px-6 py-2.5 rounded-xl font-semibold shadow-lg transition-all duration-200 ${
-                      !copySourceDoctorForSummarizer || selectedSummarizers.length === 0
+                      !copySourceDoctorForSummarizer || !selectedSummarizer
                         ? 'bg-slate-300 text-slate-500 cursor-not-allowed'
                         : 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white hover:shadow-xl'
                     }`}
                   >
-                    Copy {selectedSummarizers.length > 0 ? `${selectedSummarizers.length} ` : ''}Summarizer{selectedSummarizers.length > 1 ? 's' : ''}
+                    Copy Summarizer
                   </button>
                 </div>
               </div>
@@ -6702,7 +6528,7 @@ const SummarizerPrototype = () => {
   if (currentView === 'bulk-transfer') {
     // Handler for executing copy operations
     const handleExecuteCopy = async (copyData) => {
-      const { sourceDoctors, targetDoctors, targetEmails, copyType, selectedSummarizers, resourceMappings } = copyData;
+      const { sourceDoctors, targetDoctors, targetEmails, copyType, selectedSummarizer, resourceMappings } = copyData;
       
       // Process target emails to find or create doctor entries
       const targetEmailList = targetEmails || [];
@@ -6713,12 +6539,15 @@ const SummarizerPrototype = () => {
       
       let totalCopied = 0;
       
-      // Get source summarizers based on copy type
+      // Get source summarizer based on copy type
       let summarizersToCopy = [];
-      if (copyType === 'summarizers') {
-        summarizersToCopy = createdSummarizers.filter(s => 
-          selectedSummarizers.includes(s.id) && sourceDoctors.includes(s.doctorId)
+      if (copyType === 'summarizers' && selectedSummarizer) {
+        const summarizer = createdSummarizers.find(s => 
+          s.id === selectedSummarizer && sourceDoctors.includes(s.doctorId)
         );
+        if (summarizer) {
+          summarizersToCopy = [summarizer];
+        }
       } else if (copyType === 'full') {
         summarizersToCopy = createdSummarizers.filter(s => sourceDoctors.includes(s.doctorId));
       }

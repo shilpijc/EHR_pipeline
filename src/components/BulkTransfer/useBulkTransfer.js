@@ -6,7 +6,7 @@ const ACTIONS = {
   SET_TARGET_DOCTORS: 'SET_TARGET_DOCTORS',
   TOGGLE_SOURCE_DOCTOR: 'TOGGLE_SOURCE_DOCTOR',
   TOGGLE_TARGET_DOCTOR: 'TOGGLE_TARGET_DOCTOR',
-  TOGGLE_SUMMARIZER: 'TOGGLE_SUMMARIZER',
+  SET_SUMMARIZER: 'SET_SUMMARIZER',
   SET_COPY_TYPE: 'SET_COPY_TYPE',
   SET_TARGET_EMAILS: 'SET_TARGET_EMAILS',
   SET_SEARCH_TERM: 'SET_SEARCH_TERM',
@@ -24,7 +24,7 @@ const initialState = {
   selectedSourceDoctors: [],
   selectedTargetDoctors: [],
   copyType: 'summarizers',
-  selectedSummarizers: [],
+  selectedSummarizer: null,
   targetEmails: '',
   searchTerm: '',
   ehrFilter: 'all',
@@ -51,8 +51,8 @@ const bulkTransferReducer = (state, action) => {
         selectedSourceDoctors: isSelected
           ? state.selectedSourceDoctors.filter(id => id !== doctorId)
           : [...state.selectedSourceDoctors, doctorId],
-        // Clear selected summarizers when source changes
-        selectedSummarizers: isSelected ? [] : state.selectedSummarizers
+        // Clear selected summarizer when source changes
+        selectedSummarizer: isSelected ? null : state.selectedSummarizer
       };
     }
     
@@ -67,16 +67,11 @@ const bulkTransferReducer = (state, action) => {
       };
     }
     
-    case ACTIONS.TOGGLE_SUMMARIZER: {
-      const summarizerId = action.payload;
-      const isSelected = state.selectedSummarizers.includes(summarizerId);
+    case ACTIONS.SET_SUMMARIZER:
       return {
         ...state,
-        selectedSummarizers: isSelected
-          ? state.selectedSummarizers.filter(id => id !== summarizerId)
-          : [...state.selectedSummarizers, summarizerId]
+        selectedSummarizer: action.payload
       };
-    }
     
     case ACTIONS.SET_COPY_TYPE:
       return { ...state, copyType: action.payload };
@@ -145,8 +140,8 @@ export const useBulkTransfer = () => {
     toggleTargetDoctor: (doctorId) => 
       dispatch({ type: ACTIONS.TOGGLE_TARGET_DOCTOR, payload: doctorId }),
     
-    toggleSummarizer: (summarizerId) => 
-      dispatch({ type: ACTIONS.TOGGLE_SUMMARIZER, payload: summarizerId }),
+    selectSummarizer: (summarizerId) => 
+      dispatch({ type: ACTIONS.SET_SUMMARIZER, payload: summarizerId }),
     
     setCopyType: (type) => 
       dispatch({ type: ACTIONS.SET_COPY_TYPE, payload: type }),
@@ -181,4 +176,3 @@ export const useBulkTransfer = () => {
 
   return [state, actions];
 };
-

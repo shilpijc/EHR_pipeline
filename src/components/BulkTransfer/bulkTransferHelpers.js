@@ -98,8 +98,8 @@ export const validateCopyOperation = (state) => {
     return { valid: false, message: 'Please select at least one source doctor' };
   }
 
-  if (state.copyType === 'summarizers' && state.selectedSummarizers.length === 0) {
-    return { valid: false, message: 'Please select at least one summarizer to copy' };
+  if (state.copyType === 'summarizers' && !state.selectedSummarizer) {
+    return { valid: false, message: 'Please select a summarizer to copy' };
   }
 
   if (state.selectedTargetDoctors.length === 0 && !state.targetEmails.trim()) {

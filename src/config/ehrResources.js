@@ -14,7 +14,7 @@ export const EHR_RESOURCES = {
           {
             id: 'howFarBack',
             type: 'howFarBack',
-            label: 'How Far Back',
+            label: 'Date Range',
             required: true,
             default: {
               yearsBack: 3,
@@ -34,13 +34,13 @@ export const EHR_RESOURCES = {
             id: 'sortingDirection',
             type: 'sortingDirection',
             label: 'Sorting Direction',
-            description: 'Direction for sorting and concatenating notes',
+            description: 'Order for combining notes',
             options: ['ascending', 'descending'],
             defaultValue: 'descending'
           }
         ]
       },
-      source: 'Previous notes - Single XML file (each paragraph is filtered)',
+      source: 'Previous Notes (XML format, filtered by paragraph)',
       pipelineConfig: {
         create_intermediate: true,
         depends_on_pipelines: 'pipeline_ecw_001, pipeline_ecw_002'
@@ -58,21 +58,15 @@ export const EHR_RESOURCES = {
           {
             id: 'retrievalMethod',
             type: 'retrievalMethod',
-            label: 'Retrieval Method',
+            label: 'Records to Pull',
             required: true,
             options: ['latest', 'all', 'count'],
             default: 'latest'
-          },
-          {
-            id: 'count',
-            type: 'count',
-            label: 'Number of Notes',
-            required: false
           }
         ],
         advanced: []
       },
-      source: 'Previous notes'
+      source: 'Previous Notes'
     },
     {
       id: 'athenaone-lab-results-pdf',
@@ -84,21 +78,15 @@ export const EHR_RESOURCES = {
           {
             id: 'retrievalMethod',
             type: 'retrievalMethod',
-            label: 'Retrieval Method',
+            label: 'Records to Pull',
             required: true,
             options: ['latest', 'all', 'count'],
             default: 'latest'
-          },
-          {
-            id: 'count',
-            type: 'count',
-            label: 'Number of Documents',
-            required: false
           }
         ],
         advanced: []
       },
-      source: 'Lab results'
+      source: 'Lab Results'
     },
     {
       id: 'athenaone-clinical-docs-pdf-discharge',
@@ -111,31 +99,24 @@ export const EHR_RESOURCES = {
           {
             id: 'retrievalMethod',
             type: 'retrievalMethod',
-            label: 'Retrieval Method',
+            label: 'Records to Pull',
             required: true,
             options: ['latest', 'all', 'count'],
             default: 'latest'
-          },
-          {
-            id: 'count',
-            type: 'count',
-            label: 'Number of Notes',
-            required: false,
-            note: 'Can apply, not implemented rn'
-          },
+          }
         ],
         advanced: [
           {
             id: 'keywords',
             type: 'keywords',
             label: 'Keyword Filter',
-            description: 'Customized according to need',
+            description: 'Filter documents by specific keywords',
             examples: ['hospital', 'discharge'],
             defaultValue: 'hospital, discharge'
           }
         ]
       },
-      source: 'Clinical document → discharge summary (keywords: hospital, discharge)'
+      source: 'Clinical Documents → Discharge Summary (filtered by: hospital, discharge)'
     },
     {
       id: 'athenaone-clinical-docs-pdf-other-doctor',
@@ -148,31 +129,24 @@ export const EHR_RESOURCES = {
           {
             id: 'retrievalMethod',
             type: 'retrievalMethod',
-            label: 'Retrieval Method',
+            label: 'Records to Pull',
             required: true,
             options: ['latest', 'all', 'count'],
             default: 'latest'
-          },
-          {
-            id: 'count',
-            type: 'count',
-            label: 'Number of Notes',
-            required: false,
-            note: 'Can apply, not implemented rn'
-          },
+          }
         ],
         advanced: [
           {
             id: 'keywords',
             type: 'keywords',
             label: 'Keyword Filter',
-            description: 'Customized according to need',
+            description: 'Filter documents by specific keywords',
             examples: ['consult', 'note'],
             defaultValue: 'consult, note'
           }
         ]
       },
-      source: 'Clinical document → Previous Note (Other Doctor) (keywords: consult, note)'
+      source: 'Clinical Documents → Previous Note from Other Doctor (filtered by: consult, note)'
     },
     {
       id: 'athenaone-clinical-docs-xml-previous-encounter',
@@ -185,17 +159,10 @@ export const EHR_RESOURCES = {
           {
             id: 'retrievalMethod',
             type: 'retrievalMethod',
-            label: 'Retrieval Method',
+            label: 'Records to Pull',
             required: true,
             options: ['latest', 'all', 'count'],
             default: 'latest'
-          },
-          {
-            id: 'count',
-            type: 'count',
-            label: 'Number of Notes',
-            required: false,
-            note: 'Can apply, not implemented rn'
           }
         ],
         advanced: [
@@ -203,13 +170,13 @@ export const EHR_RESOURCES = {
             id: 'keywords',
             type: 'keywords',
             label: 'Keyword Filter',
-            description: 'Customized according to need',
+            description: 'Filter documents by specific keywords',
             examples: ['consult', 'note'],
             defaultValue: 'consult, note'
           }
         ]
       },
-      source: 'Clinical document(XML) → previous encounter (keywords: consult, note)'
+      source: 'Clinical Documents (XML) → Previous Encounter (filtered by: consult, note)'
     },
     {
       id: 'athenaone-imaging-results',
@@ -221,17 +188,10 @@ export const EHR_RESOURCES = {
           {
             id: 'retrievalMethod',
             type: 'retrievalMethod',
-            label: 'Retrieval Method',
+            label: 'Records to Pull',
             required: true,
             options: ['latest', 'all', 'count'],
             default: 'latest'
-          },
-          {
-            id: 'count',
-            type: 'count',
-            label: 'Number of Notes',
-            required: false,
-            note: 'Can apply, not implemented rn'
           }
         ],
         advanced: []
@@ -248,16 +208,10 @@ export const EHR_RESOURCES = {
           {
             id: 'retrievalMethod',
             type: 'retrievalMethod',
-            label: 'Retrieval Method',
+            label: 'Records to Pull',
             required: true,
             options: ['latest', 'all', 'count'],
             default: 'latest'
-          },
-          {
-            id: 'count',
-            type: 'count',
-            label: 'Number of Documents',
-            required: false
           }
         ],
         advanced: []
@@ -276,19 +230,11 @@ export const EHR_RESOURCES = {
           {
             id: 'howFarBack',
             type: 'howFarBack',
-            label: 'How Far Back',
+            label: 'Date Range',
             required: true,
             default: {
-              yearsBack: 1,
-              toRecent: true
+              yearsBack: 1
             }
-          },
-          {
-            id: 'count',
-            type: 'count',
-            label: 'Number of Notes',
-            required: false,
-            note: 'Can apply, not implemented rn'
           }
         ],
         advanced: [
@@ -296,13 +242,13 @@ export const EHR_RESOURCES = {
             id: 'organizationIds',
             type: 'organizationIds',
             label: 'Organization IDs (List)',
-            description: 'Practice level',
+            description: 'Organization IDs for this practice',
             isList: true,
             defaultValue: '12345, 67890, 11111'
           }
         ]
       },
-      source: 'Previous notes',
+      source: 'Previous Notes',
       pipelineConfig: {
         create_intermediate: true,
         depends_on_pipelines: 'pipeline_athenaflow_notes'
@@ -320,16 +266,10 @@ export const EHR_RESOURCES = {
           {
             id: 'retrievalMethod',
             type: 'retrievalMethod',
-            label: 'Retrieval Method',
+            label: 'Records to Pull',
             required: true,
-            options: ['latest', 'all', 'count'],
+            options: ['latest', 'all'],
             default: 'latest'
-          },
-          {
-            id: 'count',
-            type: 'count',
-            label: 'Number of Notes',
-            required: false
           }
         ],
         advanced: [
@@ -337,13 +277,13 @@ export const EHR_RESOURCES = {
             id: 'templateIds',
             type: 'templateIds',
             label: 'Note Template IDs (List)',
-            description: 'List of template IDs',
+            description: 'Note templates to include',
             isList: true,
             defaultValue: 'TEMPLATE_001, TEMPLATE_002, TEMPLATE_003'
           }
         ]
       },
-      source: 'Previous notes',
+      source: 'Previous Notes',
       pipelineConfig: {
         create_intermediate: false,
         depends_on_pipelines: 'pipeline_advancedmd_001'
@@ -359,17 +299,10 @@ export const EHR_RESOURCES = {
           {
             id: 'retrievalMethod',
             type: 'retrievalMethod',
-            label: 'Retrieval Method',
+            label: 'Records to Pull',
             required: true,
-            options: ['latest', 'all', 'count'],
+            options: ['latest', 'all'],
             default: 'latest'
-          },
-          {
-            id: 'count',
-            type: 'count',
-            label: 'Number of Notes',
-            required: false,
-            note: 'Can apply, not implemented rn'
           }
         ],
         advanced: [
@@ -377,15 +310,15 @@ export const EHR_RESOURCES = {
             id: 'documentTypes',
             type: 'documentTypes',
             label: 'Document Types (List)',
-            description: 'Might need to set at practice level',
+            description: 'Select document types to include',
             isList: true,
             defaultValue: 'Progress Note, Consultation Note, Discharge Summary'
           },
           {
             id: 'keywords',
             type: 'keywords',
-            label: 'Keywords',
-            description: 'Customized according to need',
+            label: 'Keyword Filter',
+            description: 'Filter documents by specific keywords',
             defaultValue: 'clinical, assessment, diagnosis'
           }
         ]
@@ -404,21 +337,15 @@ export const EHR_RESOURCES = {
           {
             id: 'retrievalMethod',
             type: 'retrievalMethod',
-            label: 'Retrieval Method',
+            label: 'Records to Pull',
             required: true,
-            options: ['latest', 'all', 'count'],
+            options: ['latest', 'all'],
             default: 'latest'
-          },
-          {
-            id: 'count',
-            type: 'count',
-            label: 'Number of Notes',
-            required: false
           }
         ],
         advanced: []
       },
-      source: 'Previous notes'
+      source: 'Previous Notes'
     },
     {
       id: 'charm-clinical-documents-pdf',
@@ -430,17 +357,10 @@ export const EHR_RESOURCES = {
           {
             id: 'retrievalMethod',
             type: 'retrievalMethod',
-            label: 'Retrieval Method',
+            label: 'Records to Pull',
             required: true,
-            options: ['latest', 'all', 'count'],
+            options: ['latest', 'all'],
             default: 'latest'
-          },
-          {
-            id: 'count',
-            type: 'count',
-            label: 'Number of Notes',
-            required: false,
-            note: 'Can apply, not implemented rn'
           },
         ],
         advanced: [
@@ -448,7 +368,7 @@ export const EHR_RESOURCES = {
             id: 'documentTypes',
             type: 'documentTypes',
             label: 'Document Types (List)',
-            description: 'Might need to set at practice level',
+            description: 'Select document types to include',
             isList: true,
             defaultValue: 'Progress Note, Consultation Note, Discharge Summary'
           }
@@ -468,21 +388,15 @@ export const EHR_RESOURCES = {
           {
             id: 'retrievalMethod',
             type: 'retrievalMethod',
-            label: 'Retrieval Method',
+            label: 'Records to Pull',
             required: true,
-            options: ['latest', 'all', 'count'],
+            options: ['latest', 'all'],
             default: 'latest'
-          },
-          {
-            id: 'count',
-            type: 'count',
-            label: 'Number of Notes',
-            required: false
           }
         ],
         advanced: []
       },
-      source: 'Previous notes'
+      source: 'Previous Notes'
     }
   ],
   Greenway: [
@@ -495,7 +409,7 @@ export const EHR_RESOURCES = {
         editable: [],
         advanced: []
       },
-      source: 'Previous notes (CCDA only)'
+      source: 'Previous Notes (CCDA format only)'
     }
   ]
 };

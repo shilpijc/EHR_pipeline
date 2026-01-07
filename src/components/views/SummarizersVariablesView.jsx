@@ -118,6 +118,13 @@ const SummarizersVariablesView = ({
     return existing ? existing.action : null;
   };
 
+  // Helper to get the existing inform instructions for a summarizer in a cell
+  const getExistingInformInstructions = (cellKey, summarizerId) => {
+    const cellSummarizers = sectionSummarizers[cellKey] || [];
+    const existing = cellSummarizers.find(s => s.id.startsWith(`${summarizerId}-`) && s.action === 'inform');
+    return existing ? existing.instructions : null;
+  };
+
   // Helper to get the section name where a summarizer is being used
   const getSectionName = (cellKey) => {
     const [sectionKey] = cellKey.split('-');
@@ -227,7 +234,7 @@ const SummarizersVariablesView = ({
             >
               <Plus className="w-5 h-5" />
             </button>
-            
+
             {isDropdownOpen && (
               <div
                 className="fixed w-80 bg-white rounded-lg shadow-xl border border-slate-200 py-2"
@@ -446,12 +453,13 @@ const SummarizersVariablesView = ({
                         {(() => {
                           const hasExisting = hasExistingAction(cellKey, summarizer.id);
                           const existingAction = getExistingAction(cellKey, summarizer.id);
+                          const existingInstructions = getExistingInformInstructions(cellKey, summarizer.id);
                           const sectionName = getSectionName(cellKey);
-                          
+
                           // Check if this is the selected action
                           const isSelected = existingAction === 'inform';
                           const isDisabled = hasExisting;
-                          
+
                           // Determine button text
                           let buttonText = 'Inform';
                           if (isSelected) {
@@ -459,14 +467,14 @@ const SummarizersVariablesView = ({
                           } else if (hasExisting) {
                             buttonText = 'Already Used';
                           }
-                          
+
                           // Determine tooltip text
                           let tooltipText = 'Inform context';
                           if (hasExisting) {
                             const actionLabel = existingAction === 'append' ? 'appending' : existingAction === 'prepend' ? 'prepending' : 'informing';
                             tooltipText = `Already ${actionLabel} to ${sectionName}`;
                           }
-                          
+
                           // Determine button styling
                           let buttonClassName = 'px-2 py-1.5 border rounded text-xs font-medium transition-colors flex items-center justify-center gap-1 ';
                           if (isSelected) {
@@ -476,32 +484,40 @@ const SummarizersVariablesView = ({
                           } else {
                             buttonClassName += 'bg-amber-50 hover:bg-amber-100 border-amber-300 text-amber-700 cursor-pointer';
                           }
-                          
+
                           return (
-                            <button
-                              type="button"
-                              disabled={isDisabled}
-                              onMouseDown={(e) => {
-                                if (isDisabled) {
+                            <>
+                              <button
+                                type="button"
+                                disabled={isDisabled}
+                                onMouseDown={(e) => {
+                                  if (isDisabled) {
+                                    e.preventDefault();
+                                    e.stopPropagation();
+                                    return;
+                                  }
                                   e.preventDefault();
                                   e.stopPropagation();
-                                  return;
-                                }
-                                e.preventDefault();
-                                e.stopPropagation();
-                                const expandKey = `${summarizer.id}-${cellKey}`;
-                                console.log('Inform clicked! Setting expandKey:', expandKey);
-                                setInformPromptExpanded(expandKey);
-                                setInformPromptText('');
-                                console.log('State should be updated now');
-                              }}
-                              className={buttonClassName}
-                              style={{pointerEvents: 'auto', position: 'relative', zIndex: 10000}}
-                              title={tooltipText}
-                            >
-                              <span>💡</span>
-                              <span>{buttonText}</span>
-                            </button>
+                                  const expandKey = `${summarizer.id}-${cellKey}`;
+                                  console.log('Inform clicked! Setting expandKey:', expandKey);
+                                  setInformPromptExpanded(expandKey);
+                                  setInformPromptText('');
+                                  console.log('State should be updated now');
+                                }}
+                                className={buttonClassName}
+                                style={{pointerEvents: 'auto', position: 'relative', zIndex: 10000}}
+                                title={tooltipText}
+                              >
+                                <span>💡</span>
+                                <span>{buttonText}</span>
+                              </button>
+                              {isSelected && existingInstructions && existingInstructions.trim() && (
+                                <div className="col-span-3 mt-2 p-2 bg-amber-50/50 border border-amber-200 rounded text-xs">
+                                  <div className="font-semibold text-amber-900 mb-1">Current Instructions:</div>
+                                  <div className="text-amber-800 italic">{existingInstructions}</div>
+                                </div>
+                              )}
+                            </>
                           );
                         })()}
                       </div>
@@ -637,7 +653,7 @@ const SummarizersVariablesView = ({
           >
             <Plus className="w-4 h-4" />
           </button>
-          
+
           {isDropdownOpen && (
             <div
               className="fixed w-80 bg-white rounded-lg shadow-xl border border-slate-200 py-2"
@@ -840,12 +856,13 @@ const SummarizersVariablesView = ({
                       {(() => {
                         const hasExisting = hasExistingAction(cellKey, summarizer.id);
                         const existingAction = getExistingAction(cellKey, summarizer.id);
+                        const existingInstructions = getExistingInformInstructions(cellKey, summarizer.id);
                         const sectionName = getSectionName(cellKey);
-                        
+
                         // Check if this is the selected action
                         const isSelected = existingAction === 'inform';
                         const isDisabled = hasExisting;
-                        
+
                         // Determine button text
                         let buttonText = 'Inform';
                         if (isSelected) {
@@ -853,14 +870,14 @@ const SummarizersVariablesView = ({
                         } else if (hasExisting) {
                           buttonText = 'Already Used';
                         }
-                        
+
                         // Determine tooltip text
                         let tooltipText = 'Inform context';
                         if (hasExisting) {
                           const actionLabel = existingAction === 'append' ? 'appending' : existingAction === 'prepend' ? 'prepending' : 'informing';
                           tooltipText = `Already ${actionLabel} to ${sectionName}`;
                         }
-                        
+
                         // Determine button styling
                         let buttonClassName = 'px-2 py-1.5 border rounded text-xs font-medium transition-colors flex items-center justify-center gap-1 ';
                         if (isSelected) {
@@ -870,32 +887,40 @@ const SummarizersVariablesView = ({
                         } else {
                           buttonClassName += 'bg-amber-50 hover:bg-amber-100 border-amber-300 text-amber-700';
                         }
-                        
+
                         return (
-                          <button
-                            type="button"
-                            disabled={isDisabled}
-                            onMouseDown={(e) => {
-                              if (isDisabled) {
+                          <>
+                            <button
+                              type="button"
+                              disabled={isDisabled}
+                              onMouseDown={(e) => {
+                                if (isDisabled) {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  return;
+                                }
                                 e.preventDefault();
                                 e.stopPropagation();
-                                return;
-                              }
-                              e.preventDefault();
-                              e.stopPropagation();
-                              const expandKey = `${summarizer.id}-${cellKey}`;
-                              console.log('[SECOND DROPDOWN] Inform clicked! Setting expandKey:', expandKey);
-                              setInformPromptExpanded(expandKey);
-                              setInformPromptText('');
-                              console.log('[SECOND DROPDOWN] State should be updated now');
-                            }}
-                            className={buttonClassName}
-                            style={{pointerEvents: 'auto', position: 'relative', zIndex: 10000}}
-                            title={tooltipText}
-                          >
-                            <span>💡</span>
-                            <span>{buttonText}</span>
-                          </button>
+                                const expandKey = `${summarizer.id}-${cellKey}`;
+                                console.log('[SECOND DROPDOWN] Inform clicked! Setting expandKey:', expandKey);
+                                setInformPromptExpanded(expandKey);
+                                setInformPromptText('');
+                                console.log('[SECOND DROPDOWN] State should be updated now');
+                              }}
+                              className={buttonClassName}
+                              style={{pointerEvents: 'auto', position: 'relative', zIndex: 10000}}
+                              title={tooltipText}
+                            >
+                              <span>💡</span>
+                              <span>{buttonText}</span>
+                            </button>
+                            {isSelected && existingInstructions && existingInstructions.trim() && (
+                              <div className="col-span-3 mt-2 p-2 bg-amber-50/50 border border-amber-200 rounded text-xs">
+                                <div className="font-semibold text-amber-900 mb-1">Current Instructions:</div>
+                                <div className="text-amber-800 italic">{existingInstructions}</div>
+                              </div>
+                            )}
+                          </>
                         );
                       })()}
                     </div>
